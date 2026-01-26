@@ -12,7 +12,6 @@
 
     function hookCredits() {
         const observer = new MutationObserver(() => {
-            // Credits names are usually spans or links inside credits dialog
             document.querySelectorAll(
                 'div[class*="credits"] span, div[class*="Credits"] span, div[class*="credits"] a, div[class*="Credits"] a'
             ).forEach(el => {
@@ -30,7 +29,6 @@
 
                     copyText(text);
 
-                    // lil feedback
                     el.style.opacity = "0.6";
                     setTimeout(() => el.style.opacity = "1", 150);
                 });
@@ -45,3 +43,4 @@
 
     hookCredits();
 })();
+
