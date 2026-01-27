@@ -10,9 +10,6 @@
             .credits-copyable {
                 cursor: copy;
             }
-            body.ccc-shift .credits-copyable {
-                cursor: pointer;
-            }
             .copied {
                 opacity: 0.6;
                 transition: opacity 150ms ease;
@@ -42,13 +39,6 @@
     }
 
     const DIALOG_SELECTOR = '[role="dialog"], [aria-modal="true"]';
-    let shiftDown = false;
-
-    function setShiftDown(down) {
-        if (shiftDown === down) return;
-        shiftDown = down;
-        document.body.classList.toggle("ccc-shift", shiftDown);
-    }
 
     function isCreditsDialog(dialogEl) {
         if (!dialogEl || dialogEl.nodeType !== 1) return false;
@@ -86,24 +76,6 @@
         return candidate;
     }
 
-    document.addEventListener(
-        "keydown",
-        e => {
-            if (e.key === "Shift" || e.code === "ShiftLeft" || e.code === "ShiftRight") setShiftDown(true);
-        },
-        true
-    );
-
-    document.addEventListener(
-        "keyup",
-        e => {
-            if (e.key === "Shift" || e.code === "ShiftLeft" || e.code === "ShiftRight") setShiftDown(false);
-        },
-        true
-    );
-
-    window.addEventListener("blur", () => setShiftDown(false));
-
     function copyText(text) {
         navigator.clipboard.writeText(text).catch(() => {
             const textarea = document.createElement("textarea");
@@ -139,9 +111,6 @@
 
         const el = getCopyTargetFromEventTarget(e.target);
         if (!el || !el.dataset.copyHooked) return;
-
-        // Normal Spotify behaviour mode (hold Shift)
-        if (e.shiftKey || shiftDown) return;
 
         e.preventDefault();
         e.stopPropagation();
