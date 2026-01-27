@@ -9,4 +9,5 @@ A small Spicetify extension that lets you copy Credits names with a single click
 - Works around Spotify selection restrictions
 
 ## Usage
-Open a track → Credits → click a name.
+Open a track → View Credits → click a name to copy it.
+Press SHIFT to restore normal Spotify behaviour.
