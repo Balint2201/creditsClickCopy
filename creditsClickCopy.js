@@ -1,5 +1,8 @@
 (() => {
+    let clickEnabled = true;
     const CREDIT_SELECTOR = 'div[class*="credit" i] span, div[class*="credit" i] a';
+    const VERSION_URL = 'https://cdn.jsdelivr.net/gh/Balint2201/creditsClickCopy@main/version.json';
+    const CURRENT_VERSION = '1.0.0';
 
     if (!document.getElementById("credits-click-copy-style")) {
         const style = document.createElement("style");
@@ -15,6 +18,26 @@
                 opacity: 0.6;
                 transition: opacity 150ms ease;
             }
+            .ccc-toast {
+                position: fixed;
+                right: 16px;
+                bottom: 16px;
+                background: rgba(0,0,0,0.85);
+                color: #fff;
+                border-radius: 8px;
+                padding: 10px 12px;
+                font-size: 13px;
+                box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+                z-index: 99999;
+                opacity: 0;
+                transform: translateY(8px);
+                transition: opacity 150ms ease, transform 150ms ease;
+                pointer-events: none;
+            }
+            .ccc-toast.show {
+                opacity: 1;
+                transform: translateY(0);
+            }
         `;
         document.head.appendChild(style);
     }
@@ -26,8 +49,16 @@
         shiftDown = down;
         if (shiftDown) {
             document.body.classList.add("ccc-shift");
+            if (clickEnabled) {
+                document.removeEventListener("click", onDocumentClick);
+                clickEnabled = false;
+            }
         } else {
             document.body.classList.remove("ccc-shift");
+            if (!clickEnabled) {
+                document.addEventListener("click", onDocumentClick);
+                clickEnabled = true;
+            }
         }
     }
 
@@ -66,7 +97,7 @@
 
     document.querySelectorAll(CREDIT_SELECTOR).forEach(mark);
 
-    document.addEventListener("click", e => {
+    function onDocumentClick(e) {
         const el = e.target.closest(CREDIT_SELECTOR);
         if (!el || !el.dataset.copyHooked) return;
 
@@ -82,7 +113,9 @@
 
         el.classList.add("copied");
         setTimeout(() => el.classList.remove("copied"), 150);
-    });
+    }
+
+    document.addEventListener("click", onDocumentClick);
 
     const observer = new MutationObserver(mutations => {
         for (const m of mutations) {
@@ -102,4 +135,38 @@
         childList: true,
         subtree: true
     });
+
+    function showToast(text) {
+        let el = document.getElementById("ccc-toast");
+        if (!el) {
+            el = document.createElement("div");
+            el.id = "ccc-toast";
+            el.className = "ccc-toast";
+            el.textContent = text;
+            document.body.appendChild(el);
+            requestAnimationFrame(() => el.classList.add("show"));
+        } else {
+            el.textContent = text;
+            el.classList.add("show");
+        }
+        clearTimeout(el._hideTimer);
+        el._hideTimer = setTimeout(() => {
+            el.classList.remove("show");
+            setTimeout(() => el.remove(), 200);
+        }, 4500);
+    }
+
+    function checkVersion() {
+        fetch(VERSION_URL, { cache: "no-store" })
+            .then(r => r.ok ? r.json() : null)
+            .then(json => {
+                if (!json || !json.version) return;
+                if (String(json.version) !== String(CURRENT_VERSION)) {
+                    showToast("Credits Click Copy: You are not on the latest version!");
+                }
+            })
+            .catch(() => {});
+    }
+
+    checkVersion();
 })();
