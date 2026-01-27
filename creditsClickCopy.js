@@ -5,6 +5,12 @@
         const style = document.createElement("style");
         style.id = "credits-click-copy-style";
         style.textContent = `
+            .credits-copyable {
+                cursor: copy;
+            }
+            body.ccc-shift .credits-copyable {
+                cursor: pointer;
+            }
             .copied {
                 opacity: 0.6;
                 transition: opacity 150ms ease;
@@ -12,6 +18,32 @@
         `;
         document.head.appendChild(style);
     }
+
+    let shiftDown = false;
+
+    function setShiftDown(down) {
+        if (shiftDown === down) return;
+        shiftDown = down;
+        if (shiftDown) {
+            document.body.classList.add("ccc-shift");
+        } else {
+            document.body.classList.remove("ccc-shift");
+        }
+    }
+
+    document.addEventListener(
+        "keydown",
+        e => {
+            if (e.code === "ShiftLeft" || e.code === "ShiftRight") setShiftDown(true);
+        },
+        true
+    );
+
+    document.addEventListener("keyup", e => {
+        if (e.code === "ShiftLeft" || e.code === "ShiftRight") setShiftDown(false);
+    });
+
+    window.addEventListener("blur", () => setShiftDown(false));
 
     function copyText(text) {
         navigator.clipboard.writeText(text).catch(() => {
@@ -29,7 +61,7 @@
     function mark(el) {
         if (el.dataset.copyHooked) return;
         el.dataset.copyHooked = "true";
-        el.style.cursor = "copy";
+        el.classList.add("credits-copyable");
     }
 
     document.querySelectorAll(CREDIT_SELECTOR).forEach(mark);
@@ -38,7 +70,7 @@
         const el = e.target.closest(CREDIT_SELECTOR);
         if (!el || !el.dataset.copyHooked) return;
 
-        if (e.shiftKey) return;
+        if (shiftDown || e.shiftKey) return;
 
         e.preventDefault();
         e.stopPropagation();
