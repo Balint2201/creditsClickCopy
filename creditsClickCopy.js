@@ -1,8 +1,7 @@
 (() => {
-    let clickEnabled = false;
-    const CREDIT_SELECTOR = 'div[class*="credit" i] span, div[class*="credit" i] a';
+    const CREDIT_SELECTOR = 'a[href*="/artist/"], a[href^="spotify:artist"], div[class*="credit" i] a, div[class*="credit" i] span';
     const VERSION_URL = 'https://raw.githubusercontent.com/Balint2201/creditsClickCopy/refs/heads/main/version.json';
-    const CURRENT_VERSION = '1.0.1';
+    const CURRENT_VERSION = '1.1.0';
 
     if (!document.getElementById("credits-click-copy-style")) {
         const style = document.createElement("style");
@@ -42,37 +41,66 @@
         document.head.appendChild(style);
     }
 
+    const DIALOG_SELECTOR = '[role="dialog"], [aria-modal="true"]';
     let shiftDown = false;
 
     function setShiftDown(down) {
         if (shiftDown === down) return;
         shiftDown = down;
-        if (shiftDown) {
-            document.body.classList.add("ccc-shift");
-            if (clickEnabled) {
-                document.removeEventListener("click", onDocumentClick);
-                clickEnabled = false;
-            }
-        } else {
-            document.body.classList.remove("ccc-shift");
-            if (!clickEnabled) {
-                document.addEventListener("click", onDocumentClick);
-                clickEnabled = true;
-            }
+        document.body.classList.toggle("ccc-shift", shiftDown);
+    }
+
+    function isCreditsDialog(dialogEl) {
+        if (!dialogEl || dialogEl.nodeType !== 1) return false;
+
+        const ariaLabel = dialogEl.getAttribute("aria-label") || "";
+        if (/credits/i.test(ariaLabel)) return true;
+
+        const headingEls = dialogEl.querySelectorAll('h1, h2, h3, h4, [role="heading"], header');
+        for (const h of headingEls) {
+            const text = (h.textContent || "").trim();
+            if (/^credits$/i.test(text)) return true;
         }
+
+        const dialogText = (dialogEl.textContent || "");
+        if (!/\bcredits\b/i.test(dialogText)) return false;
+
+        // Extra guard: Credits dialog usually contains role labels.
+        if (/(written by|produced by|performed by|source)/i.test(dialogText)) return true;
+
+        return false;
+    }
+
+    function getCreditsDialogFromNode(node) {
+        const dialogEl = node?.closest?.(DIALOG_SELECTOR);
+        if (!dialogEl) return null;
+        return isCreditsDialog(dialogEl) ? dialogEl : null;
+    }
+
+    function getCopyTargetFromEventTarget(target) {
+        if (!target?.closest) return null;
+        const candidate = target.closest(CREDIT_SELECTOR);
+        if (!candidate) return null;
+        const creditsDialog = getCreditsDialogFromNode(candidate);
+        if (!creditsDialog) return null;
+        return candidate;
     }
 
     document.addEventListener(
         "keydown",
         e => {
-            if (e.code === "ShiftLeft" || e.code === "ShiftRight") setShiftDown(true);
+            if (e.key === "Shift" || e.code === "ShiftLeft" || e.code === "ShiftRight") setShiftDown(true);
         },
         true
     );
 
-    document.addEventListener("keyup", e => {
-        if (e.code === "ShiftLeft" || e.code === "ShiftRight") setShiftDown(false);
-    });
+    document.addEventListener(
+        "keyup",
+        e => {
+            if (e.key === "Shift" || e.code === "ShiftLeft" || e.code === "ShiftRight") setShiftDown(false);
+        },
+        true
+    );
 
     window.addEventListener("blur", () => setShiftDown(false));
 
@@ -95,13 +123,25 @@
         el.classList.add("credits-copyable");
     }
 
-    document.querySelectorAll(CREDIT_SELECTOR).forEach(mark);
+    function hookCreditsDialog(dialogEl) {
+        dialogEl.querySelectorAll(CREDIT_SELECTOR).forEach(mark);
+    }
+
+    function hookAllOpenCreditsDialogs() {
+        document.querySelectorAll(DIALOG_SELECTOR).forEach(d => {
+            if (isCreditsDialog(d)) hookCreditsDialog(d);
+        });
+    }
 
     function onDocumentClick(e) {
-        const el = e.target.closest(CREDIT_SELECTOR);
+        if (e.defaultPrevented) return;
+        if (e.button !== 0) return;
+
+        const el = getCopyTargetFromEventTarget(e.target);
         if (!el || !el.dataset.copyHooked) return;
 
-        if (shiftDown || e.shiftKey) return;
+        // Normal Spotify behaviour mode (hold Shift)
+        if (e.shiftKey || shiftDown) return;
 
         e.preventDefault();
         e.stopPropagation();
@@ -115,21 +155,26 @@
         setTimeout(() => el.classList.remove("copied"), 150);
     }
 
-    if (!shiftDown && !clickEnabled) {
-        document.addEventListener("click", onDocumentClick);
-        clickEnabled = true;
-    }
+    // Capture so we can prevent navigation when copying.
+    document.addEventListener("click", onDocumentClick, true);
 
     const observer = new MutationObserver(mutations => {
         for (const m of mutations) {
             for (const node of m.addedNodes) {
                 if (node.nodeType !== 1) continue;
 
-                if (node.matches?.(CREDIT_SELECTOR)) {
-                    mark(node);
+                // Only hook inside Credits dialogs (prevents leaking to other popups/menus).
+                if (node.matches?.(DIALOG_SELECTOR) && isCreditsDialog(node)) {
+                    hookCreditsDialog(node);
+                    continue;
                 }
 
-                node.querySelectorAll?.(CREDIT_SELECTOR).forEach(mark);
+                const possibleDialogs = node.querySelectorAll?.(DIALOG_SELECTOR);
+                if (possibleDialogs?.length) {
+                    for (const d of possibleDialogs) {
+                        if (isCreditsDialog(d)) hookCreditsDialog(d);
+                    }
+                }
             }
         }
     });
@@ -138,6 +183,9 @@
         childList: true,
         subtree: true
     });
+
+    // Initial hook for already-open Credits dialog.
+    hookAllOpenCreditsDialogs();
 
     function showToast(text) {
         let el = document.getElementById("ccc-toast");
