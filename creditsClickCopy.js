@@ -1,8 +1,8 @@
 (() => {
-    let clickEnabled = true;
+    let clickEnabled = false;
     const CREDIT_SELECTOR = 'div[class*="credit" i] span, div[class*="credit" i] a';
-    const VERSION_URL = 'https://cdn.jsdelivr.net/gh/Balint2201/creditsClickCopy@main/version.json';
-    const CURRENT_VERSION = '1.0.0';
+    const VERSION_URL = 'https://raw.githubusercontent.com/Balint2201/creditsClickCopy/refs/heads/main/version.json';
+    const CURRENT_VERSION = '1.0.1';
 
     if (!document.getElementById("credits-click-copy-style")) {
         const style = document.createElement("style");
@@ -115,7 +115,10 @@
         setTimeout(() => el.classList.remove("copied"), 150);
     }
 
-    document.addEventListener("click", onDocumentClick);
+    if (!shiftDown && !clickEnabled) {
+        document.addEventListener("click", onDocumentClick);
+        clickEnabled = true;
+    }
 
     const observer = new MutationObserver(mutations => {
         for (const m of mutations) {
