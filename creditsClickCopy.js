@@ -1,5 +1,5 @@
 (() => {
-    const CREDIT_SELECTOR = 'a[href*="/artist/"], a[href^="spotify:artist"], div[class*="credit" i] a, div[class*="credit" i] span';
+    const CREDIT_SELECTOR = 'div[class*="credit" i] a, div[class*="credit" i] span';
     const VERSION_URL = 'https://raw.githubusercontent.com/Balint2201/creditsClickCopy/refs/heads/main/version.json';
     const CURRENT_VERSION = '1.1.0';
 
@@ -39,26 +39,15 @@
     }
 
     const DIALOG_SELECTOR = '[role="dialog"], [aria-modal="true"]';
+    const CREDITS_DIALOG_MARKER_SELECTOR = 'div[class*="credit" i]';
 
     function isCreditsDialog(dialogEl) {
         if (!dialogEl || dialogEl.nodeType !== 1) return false;
 
-        const ariaLabel = dialogEl.getAttribute("aria-label") || "";
-        if (/credits/i.test(ariaLabel)) return true;
-
-        const headingEls = dialogEl.querySelectorAll('h1, h2, h3, h4, [role="heading"], header');
-        for (const h of headingEls) {
-            const text = (h.textContent || "").trim();
-            if (/^credits$/i.test(text)) return true;
-        }
-
-        const dialogText = (dialogEl.textContent || "");
-        if (!/\bcredits\b/i.test(dialogText)) return false;
-
-        // Extra guard: Credits dialog usually contains role labels.
-        if (/(written by|produced by|performed by|source)/i.test(dialogText)) return true;
-
-        return false;
+        // Language-agnostic / structural detection:
+        // The Credits popup consistently contains elements whose class includes "credit".
+        // Other dialogs (e.g. Marketplace update) do not.
+        return Boolean(dialogEl.querySelector(CREDITS_DIALOG_MARKER_SELECTOR));
     }
 
     function getCreditsDialogFromNode(node) {
@@ -132,16 +121,23 @@
             for (const node of m.addedNodes) {
                 if (node.nodeType !== 1) continue;
 
-                // Only hook inside Credits dialogs (prevents leaking to other popups/menus).
+                // If a dialog appears, and it (eventually) contains credits markup, hook it.
                 if (node.matches?.(DIALOG_SELECTOR) && isCreditsDialog(node)) {
                     hookCreditsDialog(node);
-                    continue;
                 }
 
-                const possibleDialogs = node.querySelectorAll?.(DIALOG_SELECTOR);
-                if (possibleDialogs?.length) {
-                    for (const d of possibleDialogs) {
-                        if (isCreditsDialog(d)) hookCreditsDialog(d);
+                // If content appears inside an already-open Credits dialog, hook new names.
+                const creditsDialog = getCreditsDialogFromNode(node);
+                if (creditsDialog) {
+                    if (node.matches?.(CREDIT_SELECTOR)) mark(node);
+                    node.querySelectorAll?.(CREDIT_SELECTOR).forEach(mark);
+                } else {
+                    // Or if this subtree contains dialogs, hook any credits dialogs found.
+                    const possibleDialogs = node.querySelectorAll?.(DIALOG_SELECTOR);
+                    if (possibleDialogs?.length) {
+                        for (const d of possibleDialogs) {
+                            if (isCreditsDialog(d)) hookCreditsDialog(d);
+                        }
                     }
                 }
             }
