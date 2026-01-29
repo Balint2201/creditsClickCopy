@@ -1,7 +1,7 @@
 (() => {
     const CREDIT_SELECTOR = 'div[class*="credit" i] a, div[class*="credit" i] span';
     const VERSION_URL = 'https://raw.githubusercontent.com/Balint2201/creditsClickCopy/refs/heads/main/version.json';
-    const CURRENT_VERSION = '1.2.1';
+    const CURRENT_VERSION = '1.2.2';
     const STORAGE_KEY_ENABLED = "creditsClickCopy:enabled";
 
     let enabled = true;
@@ -190,7 +190,7 @@
             .then(json => {
                 if (!json || !json.version) return;
                 if (String(json.version) !== String(CURRENT_VERSION)) {
-                    showToast(`Credits Click Copy: You are not on the latest version! Latest version: v${json.version}`);
+                    showToast(`creditsClickCopy: You are not on the latest version! Latest version: v${json.version}`);
                 }
             })
             .catch(() => {});
@@ -203,7 +203,7 @@
         }
 
         const menuItem = new Spicetify.Menu.Item(
-            "Credits Click Copy",
+            "creditsClickCopy",
             enabled,
             (self) => {
                 const next = !self.isEnabled;
@@ -216,7 +216,7 @@
                 else stop();
 
                 try {
-                    window.Spicetify?.showNotification?.(`Credits Click Copy ${enabled ? "enabled" : "disabled"}`);
+                    window.Spicetify?.showNotification?.(`creditsClickCopy ${enabled ? "enabled" : "disabled"}`);
                 } catch {}
             }
         );
