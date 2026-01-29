@@ -1,7 +1,12 @@
 (() => {
     const CREDIT_SELECTOR = 'div[class*="credit" i] a, div[class*="credit" i] span';
     const VERSION_URL = 'https://raw.githubusercontent.com/Balint2201/creditsClickCopy/refs/heads/main/version.json';
-    const CURRENT_VERSION = '1.1.0';
+    const CURRENT_VERSION = '1.2.0';
+    const STORAGE_KEY_ENABLED = "creditsClickCopy:enabled";
+
+    let enabled = true;
+    let running = false;
+    let observer;
 
     if (!document.getElementById("credits-click-copy-style")) {
         const style = document.createElement("style");
@@ -17,7 +22,7 @@
             .ccc-toast {
                 position: fixed;
                 right: 16px;
-                bottom: 16px;
+                bottom: 72px;
                 background: rgba(0,0,0,0.85);
                 color: #fff;
                 border-radius: 8px;
@@ -38,30 +43,32 @@
         document.head.appendChild(style);
     }
 
-    const DIALOG_SELECTOR = '[role="dialog"], [aria-modal="true"]';
-    const CREDITS_DIALOG_MARKER_SELECTOR = 'div[class*="credit" i]';
-
-    function isCreditsDialog(dialogEl) {
-        if (!dialogEl || dialogEl.nodeType !== 1) return false;
-
-        // Language-agnostic / structural detection:
-        // The Credits popup consistently contains elements whose class includes "credit".
-        // Other dialogs (e.g. Marketplace update) do not.
-        return Boolean(dialogEl.querySelector(CREDITS_DIALOG_MARKER_SELECTOR));
+    function getStoredEnabled() {
+        try {
+            const raw = window.Spicetify?.LocalStorage?.get?.(STORAGE_KEY_ENABLED) ?? localStorage.getItem(STORAGE_KEY_ENABLED);
+            if (raw === null || raw === undefined || raw === "") return true;
+            if (typeof raw === "boolean") return raw;
+            const normalized = String(raw).toLowerCase();
+            return normalized === "true" || normalized === "1" || normalized === "yes";
+        } catch {
+            return true;
+        }
     }
 
-    function getCreditsDialogFromNode(node) {
-        const dialogEl = node?.closest?.(DIALOG_SELECTOR);
-        if (!dialogEl) return null;
-        return isCreditsDialog(dialogEl) ? dialogEl : null;
+    function setStoredEnabled(value) {
+        const serialized = value ? "true" : "false";
+        try {
+            window.Spicetify?.LocalStorage?.set?.(STORAGE_KEY_ENABLED, serialized);
+        } catch {}
+        try {
+            localStorage.setItem(STORAGE_KEY_ENABLED, serialized);
+        } catch {}
     }
 
     function getCopyTargetFromEventTarget(target) {
         if (!target?.closest) return null;
         const candidate = target.closest(CREDIT_SELECTOR);
         if (!candidate) return null;
-        const creditsDialog = getCreditsDialogFromNode(candidate);
-        if (!creditsDialog) return null;
         return candidate;
     }
 
@@ -84,22 +91,26 @@
         el.classList.add("credits-copyable");
     }
 
-    function hookCreditsDialog(dialogEl) {
-        dialogEl.querySelectorAll(CREDIT_SELECTOR).forEach(mark);
-    }
-
-    function hookAllOpenCreditsDialogs() {
-        document.querySelectorAll(DIALOG_SELECTOR).forEach(d => {
-            if (isCreditsDialog(d)) hookCreditsDialog(d);
+    function unmarkAll() {
+        document.querySelectorAll(".credits-copyable").forEach(el => {
+            delete el.dataset.copyHooked;
+            el.classList.remove("credits-copyable");
+            el.classList.remove("copied");
         });
     }
 
+    function hookAllMatchingElements() {
+        document.querySelectorAll(CREDIT_SELECTOR).forEach(mark);
+    }
+
     function onDocumentClick(e) {
+        if (!enabled) return;
         if (e.defaultPrevented) return;
         if (e.button !== 0) return;
 
         const el = getCopyTargetFromEventTarget(e.target);
-        if (!el || !el.dataset.copyHooked) return;
+        if (!el) return;
+        mark(el);
 
         e.preventDefault();
         e.stopPropagation();
@@ -113,44 +124,45 @@
         setTimeout(() => el.classList.remove("copied"), 150);
     }
 
-    // Capture so we can prevent navigation when copying.
-    document.addEventListener("click", onDocumentClick, true);
+    function start() {
+        if (running) return;
+        if (!document.body) {
+            setTimeout(start, 100);
+            return;
+        }
 
-    const observer = new MutationObserver(mutations => {
-        for (const m of mutations) {
-            for (const node of m.addedNodes) {
-                if (node.nodeType !== 1) continue;
+        running = true;
+        document.addEventListener("click", onDocumentClick, true);
 
-                // If a dialog appears, and it (eventually) contains credits markup, hook it.
-                if (node.matches?.(DIALOG_SELECTOR) && isCreditsDialog(node)) {
-                    hookCreditsDialog(node);
-                }
-
-                // If content appears inside an already-open Credits dialog, hook new names.
-                const creditsDialog = getCreditsDialogFromNode(node);
-                if (creditsDialog) {
+        observer = new MutationObserver(mutations => {
+            for (const m of mutations) {
+                for (const node of m.addedNodes) {
+                    if (node.nodeType !== 1) continue;
                     if (node.matches?.(CREDIT_SELECTOR)) mark(node);
                     node.querySelectorAll?.(CREDIT_SELECTOR).forEach(mark);
-                } else {
-                    // Or if this subtree contains dialogs, hook any credits dialogs found.
-                    const possibleDialogs = node.querySelectorAll?.(DIALOG_SELECTOR);
-                    if (possibleDialogs?.length) {
-                        for (const d of possibleDialogs) {
-                            if (isCreditsDialog(d)) hookCreditsDialog(d);
-                        }
-                    }
                 }
             }
-        }
-    });
+        });
 
-    observer.observe(document.body, {
-        childList: true,
-        subtree: true
-    });
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
 
-    // Initial hook for already-open Credits dialog.
-    hookAllOpenCreditsDialogs();
+        hookAllMatchingElements();
+        checkVersion();
+    }
+
+    function stop() {
+        if (!running) return;
+        running = false;
+
+        document.removeEventListener("click", onDocumentClick, true);
+        observer?.disconnect();
+        observer = undefined;
+
+        unmarkAll();
+    }
 
     function showToast(text) {
         let el = document.getElementById("ccc-toast");
@@ -178,11 +190,42 @@
             .then(json => {
                 if (!json || !json.version) return;
                 if (String(json.version) !== String(CURRENT_VERSION)) {
-                    showToast("Credits Click Copy: You are not on the latest version!");
+                    showToast(`Credits Click Copy: You are not on the latest version! Latest version: v${json.version}`);
                 }
             })
             .catch(() => {});
     }
 
-    checkVersion();
+    function setupMenuToggle() {
+        if (!window.Spicetify?.Menu?.Item) {
+            setTimeout(setupMenuToggle, 300);
+            return;
+        }
+
+        const menuItem = new Spicetify.Menu.Item(
+            "Credits Click Copy",
+            enabled,
+            (self) => {
+                const next = !self.isEnabled;
+                self.setState(next);
+
+                enabled = next;
+                setStoredEnabled(enabled);
+
+                if (enabled) start();
+                else stop();
+
+                try {
+                    window.Spicetify?.showNotification?.(`Credits Click Copy ${enabled ? "enabled" : "disabled"}`);
+                } catch {}
+            }
+        );
+
+        menuItem.register();
+    }
+
+    enabled = getStoredEnabled();
+    if (enabled) start();
+    else stop();
+    setupMenuToggle();
 })();
