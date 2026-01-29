@@ -1,7 +1,7 @@
 (() => {
     const CREDIT_SELECTOR = 'div[class*="credit" i] a, div[class*="credit" i] span';
     const VERSION_URL = 'https://raw.githubusercontent.com/Balint2201/creditsClickCopy/refs/heads/main/version.json';
-    const CURRENT_VERSION = '1.2.0';
+    const CURRENT_VERSION = '1.2.1';
     const STORAGE_KEY_ENABLED = "creditsClickCopy:enabled";
 
     let enabled = true;
