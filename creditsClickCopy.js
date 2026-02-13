@@ -13,7 +13,7 @@
     const INTERACTIVE_TARGET_SELECTOR = "a[href], button, [role='link'], [role='button']";
     const LEGACY_CREDIT_TARGET_SELECTOR = "div[class*='credit' i] a, div[class*='credit' i] span";
     const VERSION_URL = 'https://raw.githubusercontent.com/Balint2201/creditsClickCopy/refs/heads/main/version.json';
-    const CURRENT_VERSION = '1.3.1';
+    const CURRENT_VERSION = '1.3.2';
     const STORAGE_KEY_ENABLED = "creditsClickCopy:enabled";
 
     let enabled = true;
@@ -329,14 +329,44 @@
         }, 4500);
     }
 
+    function parseSemver(version) {
+        const v = String(version ?? "").trim();
+        const match = v.match(/^(\d+)(?:\.(\d+))?(?:\.(\d+))?/);
+        if (!match) return null;
+        return {
+            major: Number(match[1] ?? 0),
+            minor: Number(match[2] ?? 0),
+            patch: Number(match[3] ?? 0)
+        };
+    }
+
+    function compareSemver(a, b) {
+        const va = parseSemver(a);
+        const vb = parseSemver(b);
+        if (!va || !vb) return null;
+
+        if (va.major !== vb.major) return va.major > vb.major ? 1 : -1;
+        if (va.minor !== vb.minor) return va.minor > vb.minor ? 1 : -1;
+        if (va.patch !== vb.patch) return va.patch > vb.patch ? 1 : -1;
+        return 0;
+    }
+
     function checkVersion() {
         fetch(VERSION_URL, { cache: "no-store" })
             .then(r => r.ok ? r.json() : null)
             .then(json => {
                 if (!json || !json.version) return;
-                if (String(json.version) !== String(CURRENT_VERSION)) {
-                    showToast(`creditsClickCopy: You are not on the latest version! Latest version: v${json.version}`);
+                const cmp = compareSemver(json.version, CURRENT_VERSION);
+                if (cmp === null) {
+                    // If versions aren't semver-like, fall back to equality check.
+                    if (String(json.version) !== String(CURRENT_VERSION)) {
+                        showToast(`creditsClickCopy: New version available: v${json.version}`);
+                    }
+                    return;
                 }
+
+                // Only warn if the remote version is newer than the running version.
+                if (cmp > 0) showToast(`creditsClickCopy: New version available: v${json.version}`);
             })
             .catch(() => {});
     }
