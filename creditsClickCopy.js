@@ -1,7 +1,10 @@
 (() => {
-    const CREDIT_SELECTOR = 'div[class*="credit" i] a, div[class*="credit" i] span';
+    // Scope everything to the Credits modal to avoid intercepting clicks globally.
+    // These class names are part of Spotify's XPUI markup (not localized text).
+    const CREDITS_MODAL_SELECTOR = ".main-trackCreditsModal-container";
+    const CREDIT_SELECTOR = `${CREDITS_MODAL_SELECTOR} div[class*="credit" i] a, ${CREDITS_MODAL_SELECTOR} div[class*="credit" i] span`;
     const VERSION_URL = 'https://raw.githubusercontent.com/Balint2201/creditsClickCopy/refs/heads/main/version.json';
-    const CURRENT_VERSION = '1.2.2';
+    const CURRENT_VERSION = '1.2.3';
     const STORAGE_KEY_ENABLED = "creditsClickCopy:enabled";
 
     let enabled = true;
@@ -67,6 +70,8 @@
 
     function getCopyTargetFromEventTarget(target) {
         if (!target?.closest) return null;
+        // Hard gate: only allow copying within the Credits modal.
+        if (!target.closest(CREDITS_MODAL_SELECTOR)) return null;
         const candidate = target.closest(CREDIT_SELECTOR);
         if (!candidate) return null;
         return candidate;
@@ -107,6 +112,10 @@
         if (!enabled) return;
         if (e.defaultPrevented) return;
         if (e.button !== 0) return;
+
+        // Don't capture clicks unless Credits modal is present.
+        // (Avoids even trying to match selectors elsewhere.)
+        if (!document.querySelector(CREDITS_MODAL_SELECTOR)) return;
 
         const el = getCopyTargetFromEventTarget(e.target);
         if (!el) return;

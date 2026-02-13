@@ -19,8 +19,7 @@ You can disable the extension without uninstalling it:
 The state is saved and will persist across restarts.
 
 ## Downsides / caveats
-- The click-to-copy handler is always active (global). If Spotify changes class names/markup, it may stop working.
-- If Spotify ever uses `*credit*` class names in other UI areas, this may also intercept those clicks.
+- The extension is scoped to Spotify's Credits modal. If Spotify changes the Credits modal class names/markup, it may stop working.
 - While enabled, the extension captures the click (to prevent navigation/selection) when it decides a click is a copy-target.
 
 ## \*\*Made for Spicy Lyrics TTML Makers\*\*
