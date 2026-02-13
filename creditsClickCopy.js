@@ -3,6 +3,8 @@
     // Spotify XPUI markup changes over versions, so we match multiple non-language signals.
     const CREDITS_MODAL_SELECTORS = [
         ".main-trackCreditsModal-container", // legacy
+        ".main-trackCreditsModal-originalCredits", // legacy content root (container child)
+        ".main-trackCreditsModal-mainSection", // legacy
         "[class*='trackCreditsModal' i]", // newer/alternative naming
         "[data-testid*='credits' i][role='dialog']",
         "[data-testid*='credits' i][aria-modal='true']"
@@ -11,7 +13,7 @@
     const INTERACTIVE_TARGET_SELECTOR = "a[href], button, [role='link'], [role='button']";
     const LEGACY_CREDIT_TARGET_SELECTOR = "div[class*='credit' i] a, div[class*='credit' i] span";
     const VERSION_URL = 'https://raw.githubusercontent.com/Balint2201/creditsClickCopy/refs/heads/main/version.json';
-    const CURRENT_VERSION = '1.3.0';
+    const CURRENT_VERSION = '1.3.1';
     const STORAGE_KEY_ENABLED = "creditsClickCopy:enabled";
 
     let enabled = true;
@@ -93,11 +95,49 @@
     }
 
     function getCreditsModalRootFromTarget(target) {
-        return closestFirst(target, CREDITS_MODAL_SELECTORS);
+        const candidate = closestFirst(target, CREDITS_MODAL_SELECTORS);
+        if (!candidate) return null;
+        const root = normalizeCreditsRoot(candidate);
+        if (!root) return null;
+        return root;
     }
 
     function getCreditsModalRootFromDocument() {
-        return queryFirst(CREDITS_MODAL_SELECTORS, document);
+        const candidate = queryFirst(CREDITS_MODAL_SELECTORS, document);
+        if (!candidate) return null;
+        const root = normalizeCreditsRoot(candidate);
+        if (!root) return null;
+        return root;
+    }
+
+    function normalizeCreditsRoot(candidate) {
+        // If we matched a child (like originalCredits), walk up to the nearest plausible container.
+        const root = candidate.closest?.(".main-trackCreditsModal-container") ?? candidate;
+        return isLikelyCreditsModalRoot(root) ? root : null;
+    }
+
+    function isLikelyCreditsModalRoot(root) {
+        if (!root || root.nodeType !== 1) return false;
+        // Non-language markers that have historically existed in the Credits modal.
+        if (root.querySelector?.(".main-trackCreditsModal-originalCredits")) return true;
+        if (root.querySelector?.(".main-trackCreditsModal-closeBtn")) return true;
+        // Fallback: any credit-ish structure inside the root.
+        if (root.querySelector?.("[class*='credit' i]")) return true;
+        return false;
+    }
+
+    function getCreditsContentRoot(modalRoot) {
+        if (!modalRoot?.querySelector) return null;
+        return (
+            modalRoot.querySelector(".main-trackCreditsModal-originalCredits") ||
+            modalRoot.querySelector("[class*='originalCredits' i]") ||
+            modalRoot
+        );
+    }
+
+    function hasAnyAlphaNum(text) {
+        // Avoid Unicode property escapes for maximum Chromium compatibility.
+        return /[A-Za-z0-9]/.test(text) || /[^\W_]/.test(text);
     }
 
     function getCopyableText(el) {
@@ -106,7 +146,7 @@
         if (/[\r\n\t]/.test(text)) return "";
         if (text.length > 120) return "";
         // Avoid copying icon-only buttons/links.
-        if (!/[\p{L}\p{N}]/u.test(text)) return "";
+        if (!hasAnyAlphaNum(text)) return "";
         return text;
     }
 
@@ -116,43 +156,54 @@
         const modalRoot = getCreditsModalRootFromTarget(target);
         if (!modalRoot) return null;
 
+        const contentRoot = getCreditsContentRoot(modalRoot);
+        if (!contentRoot || !contentRoot.contains(target)) return null;
+
         // Prefer interactive elements first (more stable across markup changes).
         const interactive = target.closest(INTERACTIVE_TARGET_SELECTOR);
-        if (interactive && modalRoot.contains(interactive) && getCopyableText(interactive)) return interactive;
+        if (interactive && contentRoot.contains(interactive) && getCopyableText(interactive)) return interactive;
 
         // Fallback to legacy credit-class-based targeting.
         const legacy = target.closest(LEGACY_CREDIT_TARGET_SELECTOR);
-        if (legacy && modalRoot.contains(legacy) && getCopyableText(legacy)) return legacy;
+        if (legacy && contentRoot.contains(legacy) && getCopyableText(legacy)) return legacy;
 
         return null;
     }
 
     function copyText(text) {
+        const webClipboardFallback = () => {
+            try {
+                if (navigator.clipboard?.writeText) {
+                    return navigator.clipboard.writeText(text);
+                }
+            } catch {}
+
+            return new Promise((resolve, reject) => {
+                try {
+                    const textarea = document.createElement("textarea");
+                    textarea.value = text;
+                    textarea.style.position = "fixed";
+                    textarea.style.opacity = "0";
+                    document.body.appendChild(textarea);
+                    textarea.select();
+                    const ok = document.execCommand("copy");
+                    textarea.remove();
+                    ok ? resolve() : reject(new Error("execCommand copy failed"));
+                } catch (e) {
+                    reject(e);
+                }
+            });
+        };
+
         // Spotify/Spicetify internal clipboard is usually the most reliable in newer builds.
         try {
             const clipboardApi = window.Spicetify?.Platform?.ClipboardAPI;
             if (clipboardApi?.copy) {
-                const res = clipboardApi.copy(text);
-                if (res?.then) {
-                    return res.catch(() => {
-                        // fall through to web clipboard below
-                        throw new Error("ClipboardAPI.copy failed");
-                    });
-                }
-                return Promise.resolve();
+                return Promise.resolve(clipboardApi.copy(text)).catch(webClipboardFallback);
             }
         } catch {}
 
-        return navigator.clipboard.writeText(text).catch(() => {
-            const textarea = document.createElement("textarea");
-            textarea.value = text;
-            textarea.style.position = "fixed";
-            textarea.style.opacity = "0";
-            document.body.appendChild(textarea);
-            textarea.select();
-            document.execCommand("copy");
-            textarea.remove();
-        });
+        return webClipboardFallback();
     }
 
     function mark(el) {
@@ -172,8 +223,10 @@
     function hookAllMatchingElements() {
         const modalRoot = getCreditsModalRootFromDocument();
         if (!modalRoot) return;
+        const contentRoot = getCreditsContentRoot(modalRoot);
+        if (!contentRoot) return;
         // Mark likely copy targets inside Credits modal.
-        modalRoot.querySelectorAll(`${INTERACTIVE_TARGET_SELECTOR}, ${LEGACY_CREDIT_TARGET_SELECTOR}`).forEach(el => {
+        contentRoot.querySelectorAll(`${INTERACTIVE_TARGET_SELECTOR}, ${LEGACY_CREDIT_TARGET_SELECTOR}`).forEach(el => {
             if (getCopyableText(el)) mark(el);
         });
     }
@@ -220,14 +273,16 @@
                     // Only process nodes when a Credits modal exists.
                     const modalRoot = getCreditsModalRootFromDocument();
                     if (!modalRoot) continue;
+                    const contentRoot = getCreditsContentRoot(modalRoot);
+                    if (!contentRoot) continue;
 
                     // Mark any new potential targets inside the Credits modal.
-                    if (modalRoot.contains(node)) {
+                    if (contentRoot.contains(node)) {
                         if (node.matches?.(`${INTERACTIVE_TARGET_SELECTOR}, ${LEGACY_CREDIT_TARGET_SELECTOR}`) && getCopyableText(node)) {
                             mark(node);
                         }
                         node.querySelectorAll?.(`${INTERACTIVE_TARGET_SELECTOR}, ${LEGACY_CREDIT_TARGET_SELECTOR}`).forEach((el) => {
-                            if (getCopyableText(el)) mark(el);
+                            if (contentRoot.contains(el) && getCopyableText(el)) mark(el);
                         });
                     }
                 }
