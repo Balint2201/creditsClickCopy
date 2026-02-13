@@ -13,7 +13,7 @@
     const INTERACTIVE_TARGET_SELECTOR = "a[href], button, [role='link'], [role='button']";
     const LEGACY_CREDIT_TARGET_SELECTOR = "div[class*='credit' i] a, div[class*='credit' i] span";
     const VERSION_URL = 'https://raw.githubusercontent.com/Balint2201/creditsClickCopy/refs/heads/main/version.json';
-    const CURRENT_VERSION = '1.3.2';
+    const CURRENT_VERSION = '1.3.3';
     const STORAGE_KEY_ENABLED = "creditsClickCopy:enabled";
 
     let enabled = true;
@@ -360,13 +360,13 @@
                 if (cmp === null) {
                     // If versions aren't semver-like, fall back to equality check.
                     if (String(json.version) !== String(CURRENT_VERSION)) {
-                        showToast(`creditsClickCopy: New version available: v${json.version}`);
+                        showToast(`creditsClickCopy: New version available (current v${CURRENT_VERSION} → v${json.version})`);
                     }
                     return;
                 }
 
                 // Only warn if the remote version is newer than the running version.
-                if (cmp > 0) showToast(`creditsClickCopy: New version available: v${json.version}`);
+                if (cmp > 0) showToast(`creditsClickCopy: New version available (current v${CURRENT_VERSION} → v${json.version})`);
             })
             .catch(() => {});
     }
