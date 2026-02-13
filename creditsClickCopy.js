@@ -1,10 +1,17 @@
 (() => {
     // Scope everything to the Credits modal to avoid intercepting clicks globally.
-    // These class names are part of Spotify's XPUI markup (not localized text).
-    const CREDITS_MODAL_SELECTOR = ".main-trackCreditsModal-container";
-    const CREDIT_SELECTOR = `${CREDITS_MODAL_SELECTOR} div[class*="credit" i] a, ${CREDITS_MODAL_SELECTOR} div[class*="credit" i] span`;
+    // Spotify XPUI markup changes over versions, so we match multiple non-language signals.
+    const CREDITS_MODAL_SELECTORS = [
+        ".main-trackCreditsModal-container", // legacy
+        "[class*='trackCreditsModal' i]", // newer/alternative naming
+        "[data-testid*='credits' i][role='dialog']",
+        "[data-testid*='credits' i][aria-modal='true']"
+    ];
+
+    const INTERACTIVE_TARGET_SELECTOR = "a[href], button, [role='link'], [role='button']";
+    const LEGACY_CREDIT_TARGET_SELECTOR = "div[class*='credit' i] a, div[class*='credit' i] span";
     const VERSION_URL = 'https://raw.githubusercontent.com/Balint2201/creditsClickCopy/refs/heads/main/version.json';
-    const CURRENT_VERSION = '1.2.3';
+    const CURRENT_VERSION = '1.3.0';
     const STORAGE_KEY_ENABLED = "creditsClickCopy:enabled";
 
     let enabled = true;
@@ -68,17 +75,75 @@
         } catch {}
     }
 
+    function queryFirst(selectorList, root = document) {
+        for (const sel of selectorList) {
+            const found = root.querySelector(sel);
+            if (found) return found;
+        }
+        return null;
+    }
+
+    function closestFirst(target, selectorList) {
+        if (!target?.closest) return null;
+        for (const sel of selectorList) {
+            const found = target.closest(sel);
+            if (found) return found;
+        }
+        return null;
+    }
+
+    function getCreditsModalRootFromTarget(target) {
+        return closestFirst(target, CREDITS_MODAL_SELECTORS);
+    }
+
+    function getCreditsModalRootFromDocument() {
+        return queryFirst(CREDITS_MODAL_SELECTORS, document);
+    }
+
+    function getCopyableText(el) {
+        const text = el?.textContent?.trim?.();
+        if (!text) return "";
+        if (/[\r\n\t]/.test(text)) return "";
+        if (text.length > 120) return "";
+        // Avoid copying icon-only buttons/links.
+        if (!/[\p{L}\p{N}]/u.test(text)) return "";
+        return text;
+    }
+
     function getCopyTargetFromEventTarget(target) {
         if (!target?.closest) return null;
-        // Hard gate: only allow copying within the Credits modal.
-        if (!target.closest(CREDITS_MODAL_SELECTOR)) return null;
-        const candidate = target.closest(CREDIT_SELECTOR);
-        if (!candidate) return null;
-        return candidate;
+
+        const modalRoot = getCreditsModalRootFromTarget(target);
+        if (!modalRoot) return null;
+
+        // Prefer interactive elements first (more stable across markup changes).
+        const interactive = target.closest(INTERACTIVE_TARGET_SELECTOR);
+        if (interactive && modalRoot.contains(interactive) && getCopyableText(interactive)) return interactive;
+
+        // Fallback to legacy credit-class-based targeting.
+        const legacy = target.closest(LEGACY_CREDIT_TARGET_SELECTOR);
+        if (legacy && modalRoot.contains(legacy) && getCopyableText(legacy)) return legacy;
+
+        return null;
     }
 
     function copyText(text) {
-        navigator.clipboard.writeText(text).catch(() => {
+        // Spotify/Spicetify internal clipboard is usually the most reliable in newer builds.
+        try {
+            const clipboardApi = window.Spicetify?.Platform?.ClipboardAPI;
+            if (clipboardApi?.copy) {
+                const res = clipboardApi.copy(text);
+                if (res?.then) {
+                    return res.catch(() => {
+                        // fall through to web clipboard below
+                        throw new Error("ClipboardAPI.copy failed");
+                    });
+                }
+                return Promise.resolve();
+            }
+        } catch {}
+
+        return navigator.clipboard.writeText(text).catch(() => {
             const textarea = document.createElement("textarea");
             textarea.value = text;
             textarea.style.position = "fixed";
@@ -105,7 +170,12 @@
     }
 
     function hookAllMatchingElements() {
-        document.querySelectorAll(CREDIT_SELECTOR).forEach(mark);
+        const modalRoot = getCreditsModalRootFromDocument();
+        if (!modalRoot) return;
+        // Mark likely copy targets inside Credits modal.
+        modalRoot.querySelectorAll(`${INTERACTIVE_TARGET_SELECTOR}, ${LEGACY_CREDIT_TARGET_SELECTOR}`).forEach(el => {
+            if (getCopyableText(el)) mark(el);
+        });
     }
 
     function onDocumentClick(e) {
@@ -113,9 +183,8 @@
         if (e.defaultPrevented) return;
         if (e.button !== 0) return;
 
-        // Don't capture clicks unless Credits modal is present.
-        // (Avoids even trying to match selectors elsewhere.)
-        if (!document.querySelector(CREDITS_MODAL_SELECTOR)) return;
+        // Don't capture clicks unless a Credits modal is present.
+        if (!getCreditsModalRootFromDocument()) return;
 
         const el = getCopyTargetFromEventTarget(e.target);
         if (!el) return;
@@ -124,7 +193,7 @@
         e.preventDefault();
         e.stopPropagation();
 
-        const text = el.textContent?.trim();
+        const text = getCopyableText(el);
         if (!text) return;
 
         copyText(text);
@@ -147,8 +216,20 @@
             for (const m of mutations) {
                 for (const node of m.addedNodes) {
                     if (node.nodeType !== 1) continue;
-                    if (node.matches?.(CREDIT_SELECTOR)) mark(node);
-                    node.querySelectorAll?.(CREDIT_SELECTOR).forEach(mark);
+
+                    // Only process nodes when a Credits modal exists.
+                    const modalRoot = getCreditsModalRootFromDocument();
+                    if (!modalRoot) continue;
+
+                    // Mark any new potential targets inside the Credits modal.
+                    if (modalRoot.contains(node)) {
+                        if (node.matches?.(`${INTERACTIVE_TARGET_SELECTOR}, ${LEGACY_CREDIT_TARGET_SELECTOR}`) && getCopyableText(node)) {
+                            mark(node);
+                        }
+                        node.querySelectorAll?.(`${INTERACTIVE_TARGET_SELECTOR}, ${LEGACY_CREDIT_TARGET_SELECTOR}`).forEach((el) => {
+                            if (getCopyableText(el)) mark(el);
+                        });
+                    }
                 }
             }
         });
