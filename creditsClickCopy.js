@@ -1,22 +1,16 @@
-(() => {
-    // Scope everything to the Credits modal to avoid intercepting clicks globally.
-    // Spotify XPUI markup changes over versions, so we match multiple non-language signals.
-    const CREDITS_MODAL_SELECTORS = [
-        ".main-trackCreditsModal-container", // legacy
-        ".main-trackCreditsModal-originalCredits", // legacy content root (container child)
-        ".main-trackCreditsModal-mainSection", // legacy
-        "[class*='trackCreditsModal' i]", // newer/alternative naming
-        "[data-testid*='credits' i][role='dialog']",
-        "[data-testid*='credits' i][aria-modal='true']"
-    ];
-
-    const INTERACTIVE_TARGET_SELECTOR = "a[href], button, [role='link'], [role='button']";
-    const LEGACY_CREDIT_TARGET_SELECTOR = "div[class*='credit' i] a, div[class*='credit' i] span";
+((async () => {
+    const CREDIT_SELECTOR = 'div[class*="credit" i] a, div[class*="credit" i] span';
     const VERSION_URL = 'https://raw.githubusercontent.com/Balint2201/creditsClickCopy/refs/heads/main/version.json';
-    const CURRENT_VERSION = '1.3.3';
+    const GLOBAL_SWITCH_URL = 'https://raw.githubusercontent.com/Balint2201/creditsClickCopy/refs/heads/main/globalswitch.json';
+    const CURRENT_VERSION = '1.4.0';
     const STORAGE_KEY_ENABLED = "creditsClickCopy:enabled";
+    const TRACK_CREDITS_EXPERIMENT_DESCRIPTION = "Enables the new TrackCreditsModal implementation";
+    const TRACK_CREDITS_EXPERIMENT_RELOAD_MARKER = "creditsClickCopy:reloadedAfterDisablingTrackCreditsModal";
+    const DEFAULT_POPUP_LENGTH_MS = 4500;
 
     let enabled = true;
+    let enabledGlobally = true;
+    let popupLengthMs = DEFAULT_POPUP_LENGTH_MS;
     let running = false;
     let observer;
 
@@ -77,133 +71,24 @@
         } catch {}
     }
 
-    function queryFirst(selectorList, root = document) {
-        for (const sel of selectorList) {
-            const found = root.querySelector(sel);
-            if (found) return found;
-        }
-        return null;
-    }
-
-    function closestFirst(target, selectorList) {
-        if (!target?.closest) return null;
-        for (const sel of selectorList) {
-            const found = target.closest(sel);
-            if (found) return found;
-        }
-        return null;
-    }
-
-    function getCreditsModalRootFromTarget(target) {
-        const candidate = closestFirst(target, CREDITS_MODAL_SELECTORS);
-        if (!candidate) return null;
-        const root = normalizeCreditsRoot(candidate);
-        if (!root) return null;
-        return root;
-    }
-
-    function getCreditsModalRootFromDocument() {
-        const candidate = queryFirst(CREDITS_MODAL_SELECTORS, document);
-        if (!candidate) return null;
-        const root = normalizeCreditsRoot(candidate);
-        if (!root) return null;
-        return root;
-    }
-
-    function normalizeCreditsRoot(candidate) {
-        // If we matched a child (like originalCredits), walk up to the nearest plausible container.
-        const root = candidate.closest?.(".main-trackCreditsModal-container") ?? candidate;
-        return isLikelyCreditsModalRoot(root) ? root : null;
-    }
-
-    function isLikelyCreditsModalRoot(root) {
-        if (!root || root.nodeType !== 1) return false;
-        // Non-language markers that have historically existed in the Credits modal.
-        if (root.querySelector?.(".main-trackCreditsModal-originalCredits")) return true;
-        if (root.querySelector?.(".main-trackCreditsModal-closeBtn")) return true;
-        // Fallback: any credit-ish structure inside the root.
-        if (root.querySelector?.("[class*='credit' i]")) return true;
-        return false;
-    }
-
-    function getCreditsContentRoot(modalRoot) {
-        if (!modalRoot?.querySelector) return null;
-        return (
-            modalRoot.querySelector(".main-trackCreditsModal-originalCredits") ||
-            modalRoot.querySelector("[class*='originalCredits' i]") ||
-            modalRoot
-        );
-    }
-
-    function hasAnyAlphaNum(text) {
-        // Avoid Unicode property escapes for maximum Chromium compatibility.
-        return /[A-Za-z0-9]/.test(text) || /[^\W_]/.test(text);
-    }
-
-    function getCopyableText(el) {
-        const text = el?.textContent?.trim?.();
-        if (!text) return "";
-        if (/[\r\n\t]/.test(text)) return "";
-        if (text.length > 120) return "";
-        // Avoid copying icon-only buttons/links.
-        if (!hasAnyAlphaNum(text)) return "";
-        return text;
-    }
-
     function getCopyTargetFromEventTarget(target) {
         if (!target?.closest) return null;
-
-        const modalRoot = getCreditsModalRootFromTarget(target);
-        if (!modalRoot) return null;
-
-        const contentRoot = getCreditsContentRoot(modalRoot);
-        if (!contentRoot || !contentRoot.contains(target)) return null;
-
-        // Prefer interactive elements first (more stable across markup changes).
-        const interactive = target.closest(INTERACTIVE_TARGET_SELECTOR);
-        if (interactive && contentRoot.contains(interactive) && getCopyableText(interactive)) return interactive;
-
-        // Fallback to legacy credit-class-based targeting.
-        const legacy = target.closest(LEGACY_CREDIT_TARGET_SELECTOR);
-        if (legacy && contentRoot.contains(legacy) && getCopyableText(legacy)) return legacy;
-
-        return null;
+        const candidate = target.closest(CREDIT_SELECTOR);
+        if (!candidate) return null;
+        return candidate;
     }
 
     function copyText(text) {
-        const webClipboardFallback = () => {
-            try {
-                if (navigator.clipboard?.writeText) {
-                    return navigator.clipboard.writeText(text);
-                }
-            } catch {}
-
-            return new Promise((resolve, reject) => {
-                try {
-                    const textarea = document.createElement("textarea");
-                    textarea.value = text;
-                    textarea.style.position = "fixed";
-                    textarea.style.opacity = "0";
-                    document.body.appendChild(textarea);
-                    textarea.select();
-                    const ok = document.execCommand("copy");
-                    textarea.remove();
-                    ok ? resolve() : reject(new Error("execCommand copy failed"));
-                } catch (e) {
-                    reject(e);
-                }
-            });
-        };
-
-        // Spotify/Spicetify internal clipboard is usually the most reliable in newer builds.
-        try {
-            const clipboardApi = window.Spicetify?.Platform?.ClipboardAPI;
-            if (clipboardApi?.copy) {
-                return Promise.resolve(clipboardApi.copy(text)).catch(webClipboardFallback);
-            }
-        } catch {}
-
-        return webClipboardFallback();
+        navigator.clipboard.writeText(text).catch(() => {
+            const textarea = document.createElement("textarea");
+            textarea.value = text;
+            textarea.style.position = "fixed";
+            textarea.style.opacity = "0";
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand("copy");
+            textarea.remove();
+        });
     }
 
     function mark(el) {
@@ -221,23 +106,13 @@
     }
 
     function hookAllMatchingElements() {
-        const modalRoot = getCreditsModalRootFromDocument();
-        if (!modalRoot) return;
-        const contentRoot = getCreditsContentRoot(modalRoot);
-        if (!contentRoot) return;
-        // Mark likely copy targets inside Credits modal.
-        contentRoot.querySelectorAll(`${INTERACTIVE_TARGET_SELECTOR}, ${LEGACY_CREDIT_TARGET_SELECTOR}`).forEach(el => {
-            if (getCopyableText(el)) mark(el);
-        });
+        document.querySelectorAll(CREDIT_SELECTOR).forEach(mark);
     }
 
     function onDocumentClick(e) {
         if (!enabled) return;
         if (e.defaultPrevented) return;
         if (e.button !== 0) return;
-
-        // Don't capture clicks unless a Credits modal is present.
-        if (!getCreditsModalRootFromDocument()) return;
 
         const el = getCopyTargetFromEventTarget(e.target);
         if (!el) return;
@@ -246,7 +121,7 @@
         e.preventDefault();
         e.stopPropagation();
 
-        const text = getCopyableText(el);
+        const text = el.textContent?.trim();
         if (!text) return;
 
         copyText(text);
@@ -269,22 +144,8 @@
             for (const m of mutations) {
                 for (const node of m.addedNodes) {
                     if (node.nodeType !== 1) continue;
-
-                    // Only process nodes when a Credits modal exists.
-                    const modalRoot = getCreditsModalRootFromDocument();
-                    if (!modalRoot) continue;
-                    const contentRoot = getCreditsContentRoot(modalRoot);
-                    if (!contentRoot) continue;
-
-                    // Mark any new potential targets inside the Credits modal.
-                    if (contentRoot.contains(node)) {
-                        if (node.matches?.(`${INTERACTIVE_TARGET_SELECTOR}, ${LEGACY_CREDIT_TARGET_SELECTOR}`) && getCopyableText(node)) {
-                            mark(node);
-                        }
-                        node.querySelectorAll?.(`${INTERACTIVE_TARGET_SELECTOR}, ${LEGACY_CREDIT_TARGET_SELECTOR}`).forEach((el) => {
-                            if (contentRoot.contains(el) && getCopyableText(el)) mark(el);
-                        });
-                    }
+                    if (node.matches?.(CREDIT_SELECTOR)) mark(node);
+                    node.querySelectorAll?.(CREDIT_SELECTOR).forEach(mark);
                 }
             }
         });
@@ -309,7 +170,12 @@
         unmarkAll();
     }
 
-    function showToast(text) {
+    function showToast(text, durationMs = popupLengthMs) {
+        if (!document.body) {
+            setTimeout(() => showToast(text, durationMs), 150);
+            return;
+        }
+
         let el = document.getElementById("ccc-toast");
         if (!el) {
             el = document.createElement("div");
@@ -322,33 +188,13 @@
             el.textContent = text;
             el.classList.add("show");
         }
+
+        const finalDuration = Number.isFinite(durationMs) ? Math.max(500, durationMs) : DEFAULT_POPUP_LENGTH_MS;
         clearTimeout(el._hideTimer);
         el._hideTimer = setTimeout(() => {
             el.classList.remove("show");
             setTimeout(() => el.remove(), 200);
-        }, 4500);
-    }
-
-    function parseSemver(version) {
-        const v = String(version ?? "").trim();
-        const match = v.match(/^(\d+)(?:\.(\d+))?(?:\.(\d+))?/);
-        if (!match) return null;
-        return {
-            major: Number(match[1] ?? 0),
-            minor: Number(match[2] ?? 0),
-            patch: Number(match[3] ?? 0)
-        };
-    }
-
-    function compareSemver(a, b) {
-        const va = parseSemver(a);
-        const vb = parseSemver(b);
-        if (!va || !vb) return null;
-
-        if (va.major !== vb.major) return va.major > vb.major ? 1 : -1;
-        if (va.minor !== vb.minor) return va.minor > vb.minor ? 1 : -1;
-        if (va.patch !== vb.patch) return va.patch > vb.patch ? 1 : -1;
-        return 0;
+        }, finalDuration);
     }
 
     function checkVersion() {
@@ -356,17 +202,9 @@
             .then(r => r.ok ? r.json() : null)
             .then(json => {
                 if (!json || !json.version) return;
-                const cmp = compareSemver(json.version, CURRENT_VERSION);
-                if (cmp === null) {
-                    // If versions aren't semver-like, fall back to equality check.
-                    if (String(json.version) !== String(CURRENT_VERSION)) {
-                        showToast(`creditsClickCopy: New version available (current v${CURRENT_VERSION} → v${json.version})`);
-                    }
-                    return;
+                if (String(json.version) !== String(CURRENT_VERSION)) {
+                    showToast(`creditsClickCopy: Update available. Current: v${CURRENT_VERSION} · Latest: v${json.version}`);
                 }
-
-                // Only warn if the remote version is newer than the running version.
-                if (cmp > 0) showToast(`creditsClickCopy: New version available (current v${CURRENT_VERSION} → v${json.version})`);
             })
             .catch(() => {});
     }
@@ -399,8 +237,146 @@
         menuItem.register();
     }
 
+    function coerceBoolean(value) {
+        if (typeof value === "boolean") return value;
+        if (typeof value === "string") {
+            const normalized = value.trim().toLowerCase();
+            if (normalized === "true") return true;
+            if (normalized === "false") return false;
+        }
+        if (typeof value === "number") {
+            if (value === 1) return true;
+            if (value === 0) return false;
+        }
+        return undefined;
+    }
+
+    function getRemoteConfigEffectiveBoolean(prop) {
+        if (!prop) return undefined;
+        const candidates = [
+            prop.effectiveValue,
+            prop.resolvedValue,
+            prop.currentValue,
+            prop.value
+        ];
+        for (const candidate of candidates) {
+            const coerced = coerceBoolean(candidate);
+            if (typeof coerced === "boolean") return coerced;
+        }
+        return undefined;
+    }
+
+    function waitFor(predicate, { intervalMs = 250, timeoutMs = 5000 } = {}) {
+        return new Promise(resolve => {
+            const start = Date.now();
+            const tick = () => {
+                try {
+                    if (predicate()) return resolve(true);
+                } catch {}
+
+                if (Date.now() - start >= timeoutMs) return resolve(false);
+                setTimeout(tick, intervalMs);
+            };
+            tick();
+        });
+    }
+
+    function clampPopupLengthMs(value) {
+        const n = Number(value);
+        if (!Number.isFinite(n)) return undefined;
+        return Math.min(60000, Math.max(500, n));
+    }
+
+    async function getGlobalSwitch() {
+        try {
+            const r = await fetch(GLOBAL_SWITCH_URL, { cache: "no-store" });
+            if (!r.ok) return null;
+            const json = await r.json();
+            if (!json || typeof json !== "object") return null;
+
+            const enabledFlag = json.enabled_globally;
+            if (typeof enabledFlag !== "boolean") return null;
+
+            const message = typeof json.message === "string" ? json.message : "";
+            const len = clampPopupLengthMs(json.popuplenght);
+
+            return {
+                enabled_globally: enabledFlag,
+                message,
+                popuplenght: len
+            };
+        } catch {
+            return null;
+        }
+    }
+
+    async function ensureTrackCreditsModalExperimentDisabled() {
+        const hasApi = await waitFor(
+            () => !!window.Spicetify?.Platform?.RemoteConfigDebugAPI?.getProperties,
+            { intervalMs: 250, timeoutMs: 6000 }
+        );
+
+        const api = window.Spicetify?.Platform?.RemoteConfigDebugAPI;
+        if (!hasApi || !api?.getProperties || !api?.setOverride) {
+            return { effective: undefined, overridden: false, failed: true };
+        }
+
+        let props;
+        try {
+            props = await api.getProperties();
+        } catch {
+            return { effective: undefined, overridden: false, failed: true };
+        }
+
+        const target = props?.find?.(p =>
+            (p?.description?.trim?.() === TRACK_CREDITS_EXPERIMENT_DESCRIPTION) ||
+            (/TrackCreditsModal/i.test(p?.description || ""))
+        );
+        if (!target?.name) return { effective: undefined, overridden: false, failed: true };
+
+        const currentEffective = getRemoteConfigEffectiveBoolean(target);
+        if (currentEffective === false) return { effective: false, overridden: false, failed: false };
+
+        try {
+            await api.setOverride(
+                { source: "web", type: "boolean", name: target.name },
+                false
+            );
+        } catch {
+            return { effective: currentEffective, overridden: false, failed: true };
+        }
+
+        if (currentEffective === true) {
+            try {
+                if (!sessionStorage.getItem(TRACK_CREDITS_EXPERIMENT_RELOAD_MARKER)) {
+                    sessionStorage.setItem(TRACK_CREDITS_EXPERIMENT_RELOAD_MARKER, "1");
+                    location.reload();
+                }
+            } catch {}
+        }
+
+        return { effective: currentEffective, overridden: true, failed: false };
+    }
+
     enabled = getStoredEnabled();
+
+    const globalSwitch = await getGlobalSwitch();
+    if (globalSwitch?.popuplenght !== undefined) popupLengthMs = globalSwitch.popuplenght;
+
+    if (globalSwitch && globalSwitch.enabled_globally === false) {
+        enabledGlobally = false;
+        showToast(`Extension disabled globally, reason: ${globalSwitch.message}`);
+        stop();
+        setupMenuToggle();
+        return;
+    }
+
+    const expStatus = await ensureTrackCreditsModalExperimentDisabled();
+    if (expStatus?.failed && expStatus?.effective !== false) {
+        showToast(`creditsClickCopy: Couldn't disable the experiment "${TRACK_CREDITS_EXPERIMENT_DESCRIPTION}". The extension may not work.`);
+    }
+
     if (enabled) start();
     else stop();
     setupMenuToggle();
-})();
+})());
