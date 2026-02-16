@@ -18,9 +18,20 @@ You can disable the extension without uninstalling it:
 
 The state is saved and will persist across restarts.
 
+When disabled locally, the extension also attempts to re-enable Spotify's experiment:
+
+- "Enables the new TrackCreditsModal implementation"
+
+## TrackCreditsModal experiment handling
+To keep the Credits click-to-copy working, the extension attempts to override (set to `false`) the experiment:
+
+- "Enables the new TrackCreditsModal implementation"
+
+If it cannot be overridden and the value isn't effectively `false`, the extension shows a warning toast that it may not work.
+
 ## Downsides / caveats
 - The extension is scoped to Spotify's Credits modal. If Spotify changes the Credits modal class names/markup, it may stop working.
 - While enabled, the extension captures the click (to prevent navigation/selection) when it decides a click is a copy-target.
-- The extension will forcefully disable the new Credits styling introduced in Spotify 1.2.83, to reanable it navigat to the Experimental Features and turn on TrackCreditsModalV2.
+- The extension may trigger a one-time reload when toggling the TrackCreditsModal experiment override.
 
 ## \*\*Made for Spicy Lyrics TTML Makers\*\*
