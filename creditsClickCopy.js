@@ -219,7 +219,7 @@
         const menuItem = new Spicetify.Menu.Item(
             "creditsClickCopy",
             enabled,
-            (self) => {
+            async (self) => {
                 const next = !self.isEnabled;
                 self.setState(next);
 
@@ -227,10 +227,14 @@
                 setStoredEnabled(enabled);
 
                 if (enabled) {
+                    const status = await setTrackCreditsModalExperimentDisabled().catch(() => null);
+                    if (status?.failed && status?.effective !== false) {
+                        showToast(`creditsClickCopy: Couldn't disable the experiment "${TRACK_CREDITS_EXPERIMENT_DESCRIPTION}". The extension may not work.`);
+                    }
                     start();
                 } else {
                     stop();
-                    setTrackCreditsModalExperimentEnabled().catch(() => {});
+                    await setTrackCreditsModalExperimentEnabled().catch(() => {});
                 }
 
                 try {
@@ -366,10 +370,12 @@
     }
 
     function setTrackCreditsModalExperimentDisabled() {
+        try { sessionStorage.removeItem(TRACK_CREDITS_EXPERIMENT_ENABLE_RELOAD_MARKER); } catch {}
         return setTrackCreditsModalExperimentOverride(false, TRACK_CREDITS_EXPERIMENT_RELOAD_MARKER);
     }
 
     function setTrackCreditsModalExperimentEnabled() {
+        try { sessionStorage.removeItem(TRACK_CREDITS_EXPERIMENT_RELOAD_MARKER); } catch {}
         return setTrackCreditsModalExperimentOverride(true, TRACK_CREDITS_EXPERIMENT_ENABLE_RELOAD_MARKER);
     }
 
@@ -380,18 +386,21 @@
 
     if (globalSwitch && globalSwitch.enabled_globally === false) {
         enabledGlobally = false;
-        showToast(`Extension disabled globally, reason: ${globalSwitch.message}`);
+        showToast(`creditsClickCopy: Extension disabled globally, reason: ${globalSwitch.message}`);
         stop();
         setupMenuToggle();
         return;
     }
 
-    const expStatus = await setTrackCreditsModalExperimentDisabled();
-    if (expStatus?.failed && expStatus?.effective !== false) {
-        showToast(`creditsClickCopy: Couldn't disable the experiment "${TRACK_CREDITS_EXPERIMENT_DESCRIPTION}". The extension may not work.`);
+    if (enabled) {
+        const expStatus = await setTrackCreditsModalExperimentDisabled();
+        if (expStatus?.failed && expStatus?.effective !== false) {
+            showToast(`creditsClickCopy: Couldn't disable the experiment "${TRACK_CREDITS_EXPERIMENT_DESCRIPTION}". The extension may not work.`);
+        }
+        start();
+    } else {
+        await setTrackCreditsModalExperimentEnabled().catch(() => {});
+        stop();
     }
-
-    if (enabled) start();
-    else stop();
     setupMenuToggle();
 })());
