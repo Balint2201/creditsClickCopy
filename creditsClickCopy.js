@@ -2,10 +2,11 @@
     const CREDIT_SELECTOR = 'div[class*="credit" i] a, div[class*="credit" i] span';
     const VERSION_URL = 'https://raw.githubusercontent.com/Balint2201/creditsClickCopy/refs/heads/main/version.json';
     const GLOBAL_SWITCH_URL = 'https://raw.githubusercontent.com/Balint2201/creditsClickCopy/refs/heads/main/globalswitch.json';
-    const CURRENT_VERSION = '1.4.0';
+    const CURRENT_VERSION = '1.4.1';
     const STORAGE_KEY_ENABLED = "creditsClickCopy:enabled";
     const TRACK_CREDITS_EXPERIMENT_DESCRIPTION = "Enables the new TrackCreditsModal implementation";
     const TRACK_CREDITS_EXPERIMENT_RELOAD_MARKER = "creditsClickCopy:reloadedAfterDisablingTrackCreditsModal";
+    const TRACK_CREDITS_EXPERIMENT_ENABLE_RELOAD_MARKER = "creditsClickCopy:reloadedAfterEnablingTrackCreditsModal";
     const DEFAULT_POPUP_LENGTH_MS = 4500;
 
     let enabled = true;
@@ -225,8 +226,12 @@
                 enabled = next;
                 setStoredEnabled(enabled);
 
-                if (enabled) start();
-                else stop();
+                if (enabled) {
+                    start();
+                } else {
+                    stop();
+                    setTrackCreditsModalExperimentEnabled().catch(() => {});
+                }
 
                 try {
                     window.Spicetify?.showNotification?.(`creditsClickCopy ${enabled ? "enabled" : "disabled"}`);
@@ -310,7 +315,7 @@
         }
     }
 
-    async function ensureTrackCreditsModalExperimentDisabled() {
+    async function setTrackCreditsModalExperimentOverride(desiredValue, reloadMarkerKey) {
         const hasApi = await waitFor(
             () => !!window.Spicetify?.Platform?.RemoteConfigDebugAPI?.getProperties,
             { intervalMs: 250, timeoutMs: 6000 }
@@ -335,27 +340,37 @@
         if (!target?.name) return { effective: undefined, overridden: false, failed: true };
 
         const currentEffective = getRemoteConfigEffectiveBoolean(target);
-        if (currentEffective === false) return { effective: false, overridden: false, failed: false };
+        if (currentEffective === desiredValue) {
+            return { effective: currentEffective, overridden: false, failed: false };
+        }
 
         try {
             await api.setOverride(
                 { source: "web", type: "boolean", name: target.name },
-                false
+                desiredValue
             );
         } catch {
             return { effective: currentEffective, overridden: false, failed: true };
         }
 
-        if (currentEffective === true) {
+        if (currentEffective === !desiredValue) {
             try {
-                if (!sessionStorage.getItem(TRACK_CREDITS_EXPERIMENT_RELOAD_MARKER)) {
-                    sessionStorage.setItem(TRACK_CREDITS_EXPERIMENT_RELOAD_MARKER, "1");
+                if (!sessionStorage.getItem(reloadMarkerKey)) {
+                    sessionStorage.setItem(reloadMarkerKey, "1");
                     location.reload();
                 }
             } catch {}
         }
 
         return { effective: currentEffective, overridden: true, failed: false };
+    }
+
+    function setTrackCreditsModalExperimentDisabled() {
+        return setTrackCreditsModalExperimentOverride(false, TRACK_CREDITS_EXPERIMENT_RELOAD_MARKER);
+    }
+
+    function setTrackCreditsModalExperimentEnabled() {
+        return setTrackCreditsModalExperimentOverride(true, TRACK_CREDITS_EXPERIMENT_ENABLE_RELOAD_MARKER);
     }
 
     enabled = getStoredEnabled();
@@ -371,7 +386,7 @@
         return;
     }
 
-    const expStatus = await ensureTrackCreditsModalExperimentDisabled();
+    const expStatus = await setTrackCreditsModalExperimentDisabled();
     if (expStatus?.failed && expStatus?.effective !== false) {
         showToast(`creditsClickCopy: Couldn't disable the experiment "${TRACK_CREDITS_EXPERIMENT_DESCRIPTION}". The extension may not work.`);
     }
