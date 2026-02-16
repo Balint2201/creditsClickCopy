@@ -2,7 +2,7 @@
     const CREDIT_SELECTOR = 'div[class*="credit" i] a, div[class*="credit" i] span';
     const VERSION_URL = 'https://raw.githubusercontent.com/Balint2201/creditsClickCopy/refs/heads/main/version.json';
     const GLOBAL_SWITCH_URL = 'https://raw.githubusercontent.com/Balint2201/creditsClickCopy/refs/heads/main/globalswitch.json';
-    const CURRENT_VERSION = '1.4.2';
+    const CURRENT_VERSION = '1.4.3';
     const STORAGE_KEY_ENABLED = "creditsClickCopy:enabled";
     const TRACK_CREDITS_EXPERIMENT_DESCRIPTION = "Enables the new TrackCreditsModal implementation";
     const TRACK_CREDITS_EXPERIMENT_RELOAD_MARKER = "creditsClickCopy:reloadedAfterDisablingTrackCreditsModal";
@@ -65,12 +65,16 @@
                 transform: translateY(0);
             }
             .ccc-about-debug {
-                margin-top: 16px;
+                margin-top: 10px;
             }
-            .ccc-about-debug h3 {
+            .ccc-about-debug summary {
                 font-size: 14px;
                 font-weight: 700;
-                margin: 0 0 8px 0;
+                cursor: pointer;
+                user-select: none;
+            }
+            .ccc-about-debug[open] summary {
+                margin-bottom: 8px;
             }
             .ccc-about-debug .row {
                 display: flex;
@@ -385,6 +389,24 @@
         return best;
     }
 
+    function findSpicetifyRowElement(aboutRoot) {
+        if (!aboutRoot?.querySelectorAll) return null;
+        const nodes = aboutRoot.querySelectorAll("div, section, p, span, li");
+        let best = null;
+        let bestLen = Infinity;
+        for (const el of nodes) {
+            const text = el.textContent;
+            if (!text) continue;
+            if (!/spicetify/i.test(text) || !/version/i.test(text)) continue;
+            const len = text.length;
+            if (len < bestLen) {
+                best = el;
+                bestLen = len;
+            }
+        }
+        return best;
+    }
+
     function renderAboutDebugBlock() {
         if (!document.body) return;
         const anchor = findAboutAnchorElement();
@@ -394,17 +416,22 @@
 
         let block = document.getElementById("ccc-about-debug");
         if (!block) {
-            block = document.createElement("div");
+            block = document.createElement("details");
             block.id = "ccc-about-debug";
             block.className = "ccc-about-debug";
-            anchor.appendChild(block);
+            const summary = document.createElement("summary");
+            summary.textContent = "creditsClickCopy (DEBUG)";
+            block.appendChild(summary);
+
+            const spicetifyRow = findSpicetifyRowElement(anchor);
+            if (spicetifyRow?.insertAdjacentElement) spicetifyRow.insertAdjacentElement("afterend", block);
+            else anchor.appendChild(block);
         }
 
         const rows = [
             ["Version", CURRENT_VERSION],
             ["Local enabled", String(getStoredEnabled())],
             ["Global enabled", String(enabledGlobally)],
-            ["Global switch URL", GLOBAL_SWITCH_URL],
             ["Global switch fetched", getDebugValue("lastGlobalSwitchFetchAt") || "(unknown)"],
             ["Global switch message", getDebugValue("globalSwitchMessage") || ""],
             ["Popup length (ms)", String(popupLengthMs)],
@@ -418,10 +445,17 @@
             ["Latest version", getDebugValue("lastLatestVersion") || "(unknown)"],
         ];
 
+        const summary = block.querySelector("summary");
         block.innerHTML = "";
-        const title = document.createElement("h3");
-        title.textContent = "creditsClickCopy";
-        block.appendChild(title);
+        if (summary) block.appendChild(summary);
+        else {
+            const s = document.createElement("summary");
+            s.textContent = "creditsClickCopy (DEBUG)";
+            block.appendChild(s);
+        }
+
+        const container = document.createElement("div");
+        block.appendChild(container);
 
         for (const [k, v] of rows) {
             const row = document.createElement("div");
@@ -434,7 +468,7 @@
             valueEl.textContent = v;
             row.appendChild(keyEl);
             row.appendChild(valueEl);
-            block.appendChild(row);
+            container.appendChild(row);
         }
     }
 
