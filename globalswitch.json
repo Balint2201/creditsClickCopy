@@ -1,5 +1,5 @@
 {
-  "enabled_globally": true,
-  "message": "",
+  "enabled_globally": false,
+  "message": "An internal error breaks the experiment handling mechanism, temporarily disabled.",
   "popuplenght": 4500
 }
