@@ -2,12 +2,13 @@
     const CREDIT_SELECTOR = 'div[class*="credit" i] a, div[class*="credit" i] span';
     const VERSION_URL = 'https://raw.githubusercontent.com/Balint2201/creditsClickCopy/refs/heads/main/version.json';
     const GLOBAL_SWITCH_URL = 'https://raw.githubusercontent.com/Balint2201/creditsClickCopy/refs/heads/main/globalswitch.json';
-    const CURRENT_VERSION = '1.4.1';
+    const CURRENT_VERSION = '1.4.2';
     const STORAGE_KEY_ENABLED = "creditsClickCopy:enabled";
     const TRACK_CREDITS_EXPERIMENT_DESCRIPTION = "Enables the new TrackCreditsModal implementation";
     const TRACK_CREDITS_EXPERIMENT_RELOAD_MARKER = "creditsClickCopy:reloadedAfterDisablingTrackCreditsModal";
     const TRACK_CREDITS_EXPERIMENT_ENABLE_RELOAD_MARKER = "creditsClickCopy:reloadedAfterEnablingTrackCreditsModal";
     const DEFAULT_POPUP_LENGTH_MS = 4500;
+    const DEBUG_KEY_PREFIX = "creditsClickCopy:debug:";
 
     let enabled = true;
     let enabledGlobally = true;
@@ -15,7 +16,24 @@
     let running = false;
     let observer;
 
-    if (!document.getElementById("credits-click-copy-style")) {
+    function setDebugValue(key, value) {
+        try {
+            localStorage.setItem(`${DEBUG_KEY_PREFIX}${key}`, String(value));
+        } catch {}
+    }
+
+    function getDebugValue(key) {
+        try {
+            return localStorage.getItem(`${DEBUG_KEY_PREFIX}${key}`);
+        } catch {
+            return null;
+        }
+    }
+
+    function ensureStyle() {
+        if (document.getElementById("credits-click-copy-style")) return;
+        if (!document.head) return;
+
         const style = document.createElement("style");
         style.id = "credits-click-copy-style";
         style.textContent = `
@@ -45,6 +63,27 @@
             .ccc-toast.show {
                 opacity: 1;
                 transform: translateY(0);
+            }
+            .ccc-about-debug {
+                margin-top: 16px;
+            }
+            .ccc-about-debug h3 {
+                font-size: 14px;
+                font-weight: 700;
+                margin: 0 0 8px 0;
+            }
+            .ccc-about-debug .row {
+                display: flex;
+                gap: 10px;
+                margin: 4px 0;
+                flex-wrap: wrap;
+            }
+            .ccc-about-debug .k {
+                font-weight: 600;
+            }
+            .ccc-about-debug .v {
+                opacity: 0.9;
+                word-break: break-word;
             }
         `;
         document.head.appendChild(style);
@@ -138,6 +177,9 @@
             return;
         }
 
+        ensureStyle();
+        setDebugValue("lastStartedAt", new Date().toISOString());
+
         running = true;
         document.addEventListener("click", onDocumentClick, true);
 
@@ -164,6 +206,8 @@
         if (!running) return;
         running = false;
 
+        setDebugValue("lastStoppedAt", new Date().toISOString());
+
         document.removeEventListener("click", onDocumentClick, true);
         observer?.disconnect();
         observer = undefined;
@@ -172,6 +216,7 @@
     }
 
     function showToast(text, durationMs = popupLengthMs) {
+        ensureStyle();
         if (!document.body) {
             setTimeout(() => showToast(text, durationMs), 150);
             return;
@@ -203,6 +248,8 @@
             .then(r => r.ok ? r.json() : null)
             .then(json => {
                 if (!json || !json.version) return;
+                setDebugValue("lastVersionCheckAt", new Date().toISOString());
+                setDebugValue("lastLatestVersion", String(json.version));
                 if (String(json.version) !== String(CURRENT_VERSION)) {
                     showToast(`creditsClickCopy: Update available. Current: v${CURRENT_VERSION} · Latest: v${json.version}`);
                 }
@@ -319,6 +366,102 @@
         }
     }
 
+    function findAboutAnchorElement() {
+        const needleA = /spicetify/i;
+        const needleB = /spotify/i;
+        const nodes = document.querySelectorAll("main, section, div");
+        let best = null;
+        let bestLen = Infinity;
+        for (const el of nodes) {
+            const text = el.textContent;
+            if (!text) continue;
+            if (!needleA.test(text) || !needleB.test(text) || !/version/i.test(text)) continue;
+            const len = text.length;
+            if (len < bestLen) {
+                best = el;
+                bestLen = len;
+            }
+        }
+        return best;
+    }
+
+    function renderAboutDebugBlock() {
+        if (!document.body) return;
+        const anchor = findAboutAnchorElement();
+        if (!anchor) return;
+
+        ensureStyle();
+
+        let block = document.getElementById("ccc-about-debug");
+        if (!block) {
+            block = document.createElement("div");
+            block.id = "ccc-about-debug";
+            block.className = "ccc-about-debug";
+            anchor.appendChild(block);
+        }
+
+        const rows = [
+            ["Version", CURRENT_VERSION],
+            ["Local enabled", String(getStoredEnabled())],
+            ["Global enabled", String(enabledGlobally)],
+            ["Global switch URL", GLOBAL_SWITCH_URL],
+            ["Global switch fetched", getDebugValue("lastGlobalSwitchFetchAt") || "(unknown)"],
+            ["Global switch message", getDebugValue("globalSwitchMessage") || ""],
+            ["Popup length (ms)", String(popupLengthMs)],
+            ["Last loaded", getDebugValue("lastLoadedAt") || "(unknown)"],
+            ["Last started", getDebugValue("lastStartedAt") || "(never)"],
+            ["Last stopped", getDebugValue("lastStoppedAt") || "(never)"],
+            ["Experiment last action", getDebugValue("lastExperimentAt") || "(unknown)"],
+            ["Experiment desired", getDebugValue("lastExperimentDesired") || "(unknown)"],
+            ["Experiment result", getDebugValue("lastExperimentResult") || "(unknown)"],
+            ["Version check", getDebugValue("lastVersionCheckAt") || "(unknown)"],
+            ["Latest version", getDebugValue("lastLatestVersion") || "(unknown)"],
+        ];
+
+        block.innerHTML = "";
+        const title = document.createElement("h3");
+        title.textContent = "creditsClickCopy";
+        block.appendChild(title);
+
+        for (const [k, v] of rows) {
+            const row = document.createElement("div");
+            row.className = "row";
+            const keyEl = document.createElement("div");
+            keyEl.className = "k";
+            keyEl.textContent = `${k}:`;
+            const valueEl = document.createElement("div");
+            valueEl.className = "v";
+            valueEl.textContent = v;
+            row.appendChild(keyEl);
+            row.appendChild(valueEl);
+            block.appendChild(row);
+        }
+    }
+
+    async function setupAboutDebugInjection() {
+        const hasHistory = await waitFor(
+            () => !!window.Spicetify?.Platform?.History?.listen,
+            { intervalMs: 250, timeoutMs: 6000 }
+        );
+
+        const attempt = () => {
+            try { renderAboutDebugBlock(); } catch {}
+        };
+
+        attempt();
+
+        if (hasHistory) {
+            try {
+                window.Spicetify.Platform.History.listen(() => {
+                    setTimeout(attempt, 300);
+                    setTimeout(attempt, 1200);
+                });
+            } catch {}
+        } else {
+            setInterval(attempt, 2000);
+        }
+    }
+
     async function setTrackCreditsModalExperimentOverride(desiredValue, reloadMarkerKey) {
         const hasApi = await waitFor(
             () => !!window.Spicetify?.Platform?.RemoteConfigDebugAPI?.getProperties,
@@ -379,27 +522,42 @@
         return setTrackCreditsModalExperimentOverride(true, TRACK_CREDITS_EXPERIMENT_ENABLE_RELOAD_MARKER);
     }
 
-    enabled = getStoredEnabled();
-
     const globalSwitch = await getGlobalSwitch();
     if (globalSwitch?.popuplenght !== undefined) popupLengthMs = globalSwitch.popuplenght;
 
     if (globalSwitch && globalSwitch.enabled_globally === false) {
         enabledGlobally = false;
         showToast(`creditsClickCopy: Extension disabled globally, reason: ${globalSwitch.message}`);
-        stop();
-        setupMenuToggle();
         return;
     }
 
+    enabled = getStoredEnabled();
+    enabledGlobally = true;
+    setDebugValue("lastLoadedAt", new Date().toISOString());
+
+    if (globalSwitch) {
+        setDebugValue("lastGlobalSwitchFetchAt", new Date().toISOString());
+        setDebugValue("globalSwitchEnabled", String(globalSwitch.enabled_globally));
+        setDebugValue("globalSwitchMessage", globalSwitch.message);
+        if (globalSwitch.popuplenght !== undefined) setDebugValue("globalSwitchPopupLength", String(globalSwitch.popuplenght));
+    }
+
+    setupAboutDebugInjection().catch(() => {});
+
     if (enabled) {
         const expStatus = await setTrackCreditsModalExperimentDisabled();
+        setDebugValue("lastExperimentAt", new Date().toISOString());
+        setDebugValue("lastExperimentDesired", "false");
+        setDebugValue("lastExperimentResult", JSON.stringify(expStatus));
         if (expStatus?.failed && expStatus?.effective !== false) {
             showToast(`creditsClickCopy: Couldn't disable the experiment "${TRACK_CREDITS_EXPERIMENT_DESCRIPTION}". The extension may not work.`);
         }
         start();
     } else {
-        await setTrackCreditsModalExperimentEnabled().catch(() => {});
+        const expStatus = await setTrackCreditsModalExperimentEnabled().catch(() => null);
+        setDebugValue("lastExperimentAt", new Date().toISOString());
+        setDebugValue("lastExperimentDesired", "true");
+        setDebugValue("lastExperimentResult", JSON.stringify(expStatus));
         stop();
     }
     setupMenuToggle();
