@@ -2,7 +2,7 @@
     const CREDIT_SELECTOR = 'div[class*="credit" i] a, div[class*="credit" i] span';
     const VERSION_URL = 'https://raw.githubusercontent.com/Balint2201/creditsClickCopy/refs/heads/main/version.json';
     const GLOBAL_SWITCH_URL = 'https://raw.githubusercontent.com/Balint2201/creditsClickCopy/refs/heads/main/globalswitch.json';
-    const CURRENT_VERSION = '1.4.3';
+    const CURRENT_VERSION = '1.4.4';
     const STORAGE_KEY_ENABLED = "creditsClickCopy:enabled";
     const TRACK_CREDITS_EXPERIMENT_DESCRIPTION = "Enables the new TrackCreditsModal implementation";
     const TRACK_CREDITS_EXPERIMENT_RELOAD_MARKER = "creditsClickCopy:reloadedAfterDisablingTrackCreditsModal";
@@ -370,16 +370,26 @@
         }
     }
 
-    function findAboutAnchorElement() {
-        const needleA = /spicetify/i;
-        const needleB = /spotify/i;
-        const nodes = document.querySelectorAll("main, section, div");
+    function findAboutContainerElement() {
+        const dialogs = Array.from(document.querySelectorAll('[role="dialog"]'));
+        for (const dialog of dialogs) {
+            const text = dialog.textContent || "";
+            if (/about spotify/i.test(text) && /spicetify/i.test(text) && /spotify/i.test(text)) return dialog;
+        }
+
+        const main = document.querySelector('main');
+        if (main) {
+            const text = main.textContent || "";
+            if (/about spotify/i.test(text) && /spicetify/i.test(text) && /spotify/i.test(text)) return main;
+        }
+
+        const candidates = Array.from(document.querySelectorAll('main, section, div'));
         let best = null;
         let bestLen = Infinity;
-        for (const el of nodes) {
-            const text = el.textContent;
-            if (!text) continue;
-            if (!needleA.test(text) || !needleB.test(text) || !/version/i.test(text)) continue;
+        for (const el of candidates) {
+            const text = el.textContent || "";
+            if (!/about spotify/i.test(text)) continue;
+            if (!/spicetify/i.test(text) || !/spotify/i.test(text)) continue;
             const len = text.length;
             if (len < bestLen) {
                 best = el;
@@ -391,13 +401,14 @@
 
     function findSpicetifyRowElement(aboutRoot) {
         if (!aboutRoot?.querySelectorAll) return null;
-        const nodes = aboutRoot.querySelectorAll("div, section, p, span, li");
+        const nodes = aboutRoot.querySelectorAll("div, section, p, span, li, a, button");
         let best = null;
         let bestLen = Infinity;
         for (const el of nodes) {
             const text = el.textContent;
             if (!text) continue;
-            if (!/spicetify/i.test(text) || !/version/i.test(text)) continue;
+            if (!/spicetify/i.test(text)) continue;
+            if (!(/version/i.test(text) || /\bv\d+\./i.test(text) || /\d+\.\d+\.\d+/.test(text))) continue;
             const len = text.length;
             if (len < bestLen) {
                 best = el;
@@ -407,10 +418,15 @@
         return best;
     }
 
+    function getInsertionAnchorForSpicetifyRow(spicetifyRow) {
+        if (!spicetifyRow) return null;
+        return spicetifyRow.closest('li, [role="row"], [data-testid], section, div') || spicetifyRow;
+    }
+
     function renderAboutDebugBlock() {
         if (!document.body) return;
-        const anchor = findAboutAnchorElement();
-        if (!anchor) return;
+        const aboutContainer = findAboutContainerElement();
+        if (!aboutContainer) return;
 
         ensureStyle();
 
@@ -423,9 +439,17 @@
             summary.textContent = "creditsClickCopy (DEBUG)";
             block.appendChild(summary);
 
-            const spicetifyRow = findSpicetifyRowElement(anchor);
-            if (spicetifyRow?.insertAdjacentElement) spicetifyRow.insertAdjacentElement("afterend", block);
-            else anchor.appendChild(block);
+            const spicetifyRow = findSpicetifyRowElement(aboutContainer);
+            const insertionAnchor = getInsertionAnchorForSpicetifyRow(spicetifyRow);
+            if (insertionAnchor?.insertAdjacentElement) insertionAnchor.insertAdjacentElement("afterend", block);
+            else aboutContainer.appendChild(block);
+        } else {
+            const spicetifyRow = findSpicetifyRowElement(aboutContainer);
+            const insertionAnchor = getInsertionAnchorForSpicetifyRow(spicetifyRow);
+            const desiredParent = insertionAnchor?.parentElement;
+            if (desiredParent && block.parentElement !== desiredParent) {
+                try { insertionAnchor.insertAdjacentElement("afterend", block); } catch {}
+            }
         }
 
         const rows = [
@@ -473,16 +497,31 @@
     }
 
     async function setupAboutDebugInjection() {
-        const hasHistory = await waitFor(
-            () => !!window.Spicetify?.Platform?.History?.listen,
-            { intervalMs: 250, timeoutMs: 6000 }
-        );
-
         const attempt = () => {
             try { renderAboutDebugBlock(); } catch {}
         };
 
+        let scheduled = false;
+        const scheduleAttempt = () => {
+            if (scheduled) return;
+            scheduled = true;
+            setTimeout(() => {
+                scheduled = false;
+                attempt();
+            }, 250);
+        };
+
         attempt();
+
+        try {
+            const observer = new MutationObserver(() => scheduleAttempt());
+            observer.observe(document.body, { childList: true, subtree: true });
+        } catch {}
+
+        const hasHistory = await waitFor(
+            () => !!window.Spicetify?.Platform?.History?.listen,
+            { intervalMs: 250, timeoutMs: 6000 }
+        );
 
         if (hasHistory) {
             try {
@@ -491,9 +530,9 @@
                     setTimeout(attempt, 1200);
                 });
             } catch {}
-        } else {
-            setInterval(attempt, 2000);
         }
+
+        setInterval(attempt, 2500);
     }
 
     async function setTrackCreditsModalExperimentOverride(desiredValue, reloadMarkerKey) {
