@@ -2,7 +2,7 @@
     const CREDIT_SELECTOR = 'div[class*="credit" i] a, div[class*="credit" i] span';
     const VERSION_URL = 'https://raw.githubusercontent.com/Balint2201/creditsClickCopy/refs/heads/main/version.json';
     const GLOBAL_SWITCH_URL = 'https://raw.githubusercontent.com/Balint2201/creditsClickCopy/refs/heads/main/globalswitch.json';
-    const CURRENT_VERSION = '1.4.4';
+    const CURRENT_VERSION = '1.4.5';
     const STORAGE_KEY_ENABLED = "creditsClickCopy:enabled";
     const TRACK_CREDITS_EXPERIMENT_DESCRIPTION = "Enables the new TrackCreditsModal implementation";
     const TRACK_CREDITS_EXPERIMENT_RELOAD_MARKER = "creditsClickCopy:reloadedAfterDisablingTrackCreditsModal";
@@ -370,17 +370,21 @@
         }
     }
 
+    function looksLikeAboutSpotifyDialogText(text) {
+        if (!text) return false;
+
+        const hasSpicetify = /spicetify/i.test(text);
+        const hasSpotifyAppLine = /(spotify for windows|spotify for macos|spotify for linux)/i.test(text);
+        const hasSpotifyVersionLike = /\b\d+\.\d+\.\d+\./.test(text) || /\b\d+\.\d+\.\d+\b/.test(text);
+
+        return hasSpicetify && (hasSpotifyAppLine || hasSpotifyVersionLike);
+    }
+
     function findAboutContainerElement() {
         const dialogs = Array.from(document.querySelectorAll('[role="dialog"]'));
         for (const dialog of dialogs) {
             const text = dialog.textContent || "";
-            if (/about spotify/i.test(text) && /spicetify/i.test(text) && /spotify/i.test(text)) return dialog;
-        }
-
-        const main = document.querySelector('main');
-        if (main) {
-            const text = main.textContent || "";
-            if (/about spotify/i.test(text) && /spicetify/i.test(text) && /spotify/i.test(text)) return main;
+            if (looksLikeAboutSpotifyDialogText(text)) return dialog;
         }
 
         const candidates = Array.from(document.querySelectorAll('main, section, div'));
@@ -388,8 +392,7 @@
         let bestLen = Infinity;
         for (const el of candidates) {
             const text = el.textContent || "";
-            if (!/about spotify/i.test(text)) continue;
-            if (!/spicetify/i.test(text) || !/spotify/i.test(text)) continue;
+            if (!looksLikeAboutSpotifyDialogText(text)) continue;
             const len = text.length;
             if (len < bestLen) {
                 best = el;
@@ -408,7 +411,7 @@
             const text = el.textContent;
             if (!text) continue;
             if (!/spicetify/i.test(text)) continue;
-            if (!(/version/i.test(text) || /\bv\d+\./i.test(text) || /\d+\.\d+\.\d+/.test(text))) continue;
+            if (!(/\bv\d+\./i.test(text) || /\bspicetify\s*v\d+\./i.test(text) || /\d+\.\d+\.\d+/.test(text))) continue;
             const len = text.length;
             if (len < bestLen) {
                 best = el;
@@ -420,7 +423,11 @@
 
     function getInsertionAnchorForSpicetifyRow(spicetifyRow) {
         if (!spicetifyRow) return null;
-        return spicetifyRow.closest('li, [role="row"], [data-testid], section, div') || spicetifyRow;
+        return (
+            spicetifyRow.closest('button, [role="button"], li, [role="row"], [data-testid], section') ||
+            spicetifyRow.closest('div') ||
+            spicetifyRow
+        );
     }
 
     function renderAboutDebugBlock() {
