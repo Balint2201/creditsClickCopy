@@ -1,12 +1,13 @@
 ((async () => {
     const CREDIT_SELECTOR = 'div[class*="credit" i] a, div[class*="credit" i] span';
+    // Strict gating: only copy when the click is inside the *actual* Spotify Credits modal.
+    // Do not use localized strings; do not accept generic dialogs.
+    // Requirement: ensure the modal root class is exactly `main-trackCreditsModal-container`.
     const CREDITS_MODAL_ROOT_SELECTOR = '.main-trackCreditsModal-container';
     const CREDITS_CLOSE_BUTTON_SELECTOR = 'button.main-trackCreditsModal-closeBtn';
-    const CREDITS_MODAL_HINT_SELECTOR = '[class*="trackCreditsModal" i]';
-    const MODAL_CONTAINER_SELECTOR = 'body > generic-modal, .ReactModalPortal, [role="dialog"], [aria-modal="true"]';
     const VERSION_URL = 'https://raw.githubusercontent.com/Balint2201/creditsClickCopy/refs/heads/main/version.json';
     const GLOBAL_SWITCH_URL = 'https://raw.githubusercontent.com/Balint2201/creditsClickCopy/refs/heads/main/globalswitch.json';
-    const CURRENT_VERSION = '1.4.6';
+    const CURRENT_VERSION = '1.4.7';
     const STORAGE_KEY_ENABLED = "creditsClickCopy:enabled";
     const TRACK_CREDITS_EXPERIMENT_DESCRIPTION = "Enables the new TrackCreditsModal implementation";
     const TRACK_CREDITS_EXPERIMENT_RELOAD_MARKER = "creditsClickCopy:reloadedAfterDisablingTrackCreditsModal";
@@ -41,9 +42,6 @@
         const style = document.createElement("style");
         style.id = "credits-click-copy-style";
         style.textContent = `
-            .credits-copyable {
-                cursor: copy;
-            }
             .copied {
                 opacity: 0.6;
                 transition: opacity 150ms ease;
@@ -138,7 +136,7 @@
             for (let i = buttons.length - 1; i >= 0; i--) {
                 const btn = buttons[i];
                 if (!isElementVisible(btn)) continue;
-                const root = btn.closest(CREDITS_MODAL_ROOT_SELECTOR) || btn.closest(MODAL_CONTAINER_SELECTOR);
+                const root = btn.closest(CREDITS_MODAL_ROOT_SELECTOR);
                 if (!root) continue;
                 if (!isElementVisible(root)) continue;
                 if (!root.querySelector?.(CREDIT_SELECTOR)) continue;
@@ -146,15 +144,16 @@
             }
         } catch {}
 
-        // Fallback: find a visible modal/dialog that contains TrackCreditsModal-ish subtree classes.
+        // Fallback: find the last visible credits modal root in DOM order.
         try {
-            const containers = Array.from(document.querySelectorAll(MODAL_CONTAINER_SELECTOR));
-            for (let i = containers.length - 1; i >= 0; i--) {
-                const c = containers[i];
-                if (!isElementVisible(c)) continue;
-                if (!c.querySelector?.(CREDITS_MODAL_HINT_SELECTOR)) continue;
-                if (!c.querySelector?.(CREDIT_SELECTOR)) continue;
-                return c;
+            const roots = Array.from(document.querySelectorAll(CREDITS_MODAL_ROOT_SELECTOR));
+            for (let i = roots.length - 1; i >= 0; i--) {
+                const root = roots[i];
+                if (!isElementVisible(root)) continue;
+                if (!root.querySelector?.(CREDIT_SELECTOR)) continue;
+                // Optional hardening: credits modal should expose the close button.
+                if (!root.querySelector?.(CREDITS_CLOSE_BUTTON_SELECTOR)) continue;
+                return root;
             }
         } catch {}
 
@@ -192,27 +191,6 @@
         });
     }
 
-    function mark(el) {
-        if (el.dataset.copyHooked) return;
-        if (!isInOpenCreditsModal(el)) return;
-        el.dataset.copyHooked = "true";
-        el.classList.add("credits-copyable");
-    }
-
-    function unmarkAll() {
-        document.querySelectorAll(".credits-copyable").forEach(el => {
-            delete el.dataset.copyHooked;
-            el.classList.remove("credits-copyable");
-            el.classList.remove("copied");
-        });
-    }
-
-    function hookAllMatchingElements() {
-        const root = getOpenCreditsModalRoot();
-        if (!root) return;
-        root.querySelectorAll?.(CREDIT_SELECTOR).forEach(mark);
-    }
-
     function onDocumentClick(e) {
         if (!enabled) return;
         if (e.defaultPrevented) return;
@@ -220,7 +198,6 @@
 
         const el = getCopyTargetFromEventTarget(e.target);
         if (!el) return;
-        mark(el);
 
         e.preventDefault();
         e.stopPropagation();
@@ -246,40 +223,6 @@
 
         running = true;
         document.addEventListener("click", onDocumentClick, true);
-
-        observer = new MutationObserver(mutations => {
-            let shouldRehook = false;
-            for (const m of mutations) {
-                for (const node of m.addedNodes) {
-                    if (node.nodeType !== 1) continue;
-
-                    // If the credits modal itself (or its close button) is being added,
-                    // we need to re-scan inside it.
-                    if (
-                        node.matches?.(CREDITS_MODAL_ROOT_SELECTOR) ||
-                        node.matches?.(CREDITS_CLOSE_BUTTON_SELECTOR) ||
-                        node.querySelector?.(CREDITS_CLOSE_BUTTON_SELECTOR) ||
-                        node.querySelector?.(CREDITS_MODAL_HINT_SELECTOR)
-                    ) {
-                        shouldRehook = true;
-                    }
-
-                    // Only mark nodes that are inside the currently open Credits modal.
-                    if (!isInOpenCreditsModal(node)) continue;
-                    if (node.matches?.(CREDIT_SELECTOR)) mark(node);
-                    node.querySelectorAll?.(CREDIT_SELECTOR).forEach(mark);
-                }
-            }
-
-            if (shouldRehook) hookAllMatchingElements();
-        });
-
-        observer.observe(document.body, {
-            childList: true,
-            subtree: true
-        });
-
-        hookAllMatchingElements();
         checkVersion();
     }
 
@@ -292,8 +235,6 @@
         document.removeEventListener("click", onDocumentClick, true);
         observer?.disconnect();
         observer = undefined;
-
-        unmarkAll();
     }
 
     function showToast(text, durationMs = popupLengthMs) {
