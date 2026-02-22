@@ -27,6 +27,8 @@ To keep the Credits click-to-copy working, the extension attempts to override (s
 
 - "Enables the new TrackCreditsModal implementation"
 
+Note: This experiment override is only attempted on Spotify app versions `>= 1.2.83`. On `1.2.82` and below, the extension will not attempt to disable the experiment and will not show the related warning toast.
+
 If it cannot be overridden and the value isn't effectively `false`, the extension shows a warning toast that it may not work.
 
 ## Downsides / caveats

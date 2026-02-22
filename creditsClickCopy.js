@@ -11,7 +11,7 @@
     const DEFAULT_POPUP_LENGTH_MS = 4500;
     const DEBUG_KEY_PREFIX = "creditsClickCopy:debug:";
     // Version
-    const CURRENT_VERSION = '1.5.0';
+    const CURRENT_VERSION = '1.5.1';
 
     let enabled = true;
     let enabledGlobally = true;
@@ -301,14 +301,18 @@
                 setStoredEnabled(enabled);
 
                 if (enabled) {
-                    const status = await setTrackCreditsModalExperimentDisabled().catch(() => null);
-                    if (status?.failed && status?.effective !== false) {
-                        showToast(`creditsClickCopy: Couldn't disable the experiment "${TRACK_CREDITS_EXPERIMENT_DESCRIPTION}". The extension may not work.`);
+                    if (shouldAttemptTrackCreditsExperimentOverride()) {
+                        const status = await setTrackCreditsModalExperimentDisabled().catch(() => null);
+                        if (status?.failed && status?.effective !== false) {
+                            showToast(`creditsClickCopy: Couldn't disable the experiment "${TRACK_CREDITS_EXPERIMENT_DESCRIPTION}". The extension may not work.`);
+                        }
                     }
                     start();
                 } else {
                     stop();
-                    await setTrackCreditsModalExperimentEnabled().catch(() => {});
+                    if (shouldAttemptTrackCreditsExperimentOverride()) {
+                        await setTrackCreditsModalExperimentEnabled().catch(() => {});
+                    }
                 }
 
                 try {
@@ -362,6 +366,47 @@
             };
             tick();
         });
+    }
+
+    const MIN_SPOTIFY_VERSION_FOR_EXPERIMENT_OVERRIDE = "1.2.83";
+
+    function parseMajorMinorPatch(versionLike) {
+        if (!versionLike) return null;
+        const m = String(versionLike).match(/(\d+)\.(\d+)\.(\d+)/);
+        if (!m) return null;
+        const major = Number(m[1]);
+        const minor = Number(m[2]);
+        const patch = Number(m[3]);
+        if (![major, minor, patch].every(n => Number.isFinite(n))) return null;
+        return [major, minor, patch];
+    }
+
+    function compareMajorMinorPatch(a, b) {
+        for (let i = 0; i < 3; i++) {
+            const diff = (a?.[i] ?? 0) - (b?.[i] ?? 0);
+            if (diff !== 0) return diff;
+        }
+        return 0;
+    }
+
+    function getSpotifyAppVersionString() {
+        // Best-effort: Spotify desktop typically includes a `Spotify/x.y.z.build` token in the UA.
+        try {
+            const ua = navigator.userAgent || "";
+            const m = ua.match(/\bSpotify\/(\d+\.\d+\.\d+(?:\.\d+)*)\b/i);
+            if (m?.[1]) return m[1];
+        } catch {}
+
+        return null;
+    }
+
+    function shouldAttemptTrackCreditsExperimentOverride() {
+        const current = parseMajorMinorPatch(getSpotifyAppVersionString());
+        const min = parseMajorMinorPatch(MIN_SPOTIFY_VERSION_FOR_EXPERIMENT_OVERRIDE);
+        if (!min) return true;
+        // If we can't detect the Spotify app version, keep existing behavior.
+        if (!current) return true;
+        return compareMajorMinorPatch(current, min) >= 0;
     }
 
     function clampPopupLengthMs(value) {
@@ -704,19 +749,45 @@
     setupAboutDebugInjection().catch(() => {});
 
     if (enabled) {
-        const expStatus = await setTrackCreditsModalExperimentDisabled();
-        setDebugValue("lastExperimentAt", new Date().toISOString());
-        setDebugValue("lastExperimentDesired", "false");
-        setDebugValue("lastExperimentResult", JSON.stringify(expStatus));
-        if (expStatus?.failed && expStatus?.effective !== false) {
-            showToast(`creditsClickCopy: Couldn't disable the experiment "${TRACK_CREDITS_EXPERIMENT_DESCRIPTION}". The extension may not work.`);
+        if (shouldAttemptTrackCreditsExperimentOverride()) {
+            const expStatus = await setTrackCreditsModalExperimentDisabled();
+            setDebugValue("lastExperimentAt", new Date().toISOString());
+            setDebugValue("lastExperimentDesired", "false");
+            setDebugValue("lastExperimentResult", JSON.stringify(expStatus));
+            if (expStatus?.failed && expStatus?.effective !== false) {
+                showToast(`creditsClickCopy: Couldn't disable the experiment "${TRACK_CREDITS_EXPERIMENT_DESCRIPTION}". The extension may not work.`);
+            }
+        } else {
+            setDebugValue("lastExperimentAt", new Date().toISOString());
+            setDebugValue("lastExperimentDesired", "skipped");
+            setDebugValue(
+                "lastExperimentResult",
+                JSON.stringify({
+                    skipped: true,
+                    reason: `Spotify < ${MIN_SPOTIFY_VERSION_FOR_EXPERIMENT_OVERRIDE}`,
+                    spotifyVersion: getSpotifyAppVersionString()
+                })
+            );
         }
         start();
     } else {
-        const expStatus = await setTrackCreditsModalExperimentEnabled().catch(() => null);
-        setDebugValue("lastExperimentAt", new Date().toISOString());
-        setDebugValue("lastExperimentDesired", "true");
-        setDebugValue("lastExperimentResult", JSON.stringify(expStatus));
+        if (shouldAttemptTrackCreditsExperimentOverride()) {
+            const expStatus = await setTrackCreditsModalExperimentEnabled().catch(() => null);
+            setDebugValue("lastExperimentAt", new Date().toISOString());
+            setDebugValue("lastExperimentDesired", "true");
+            setDebugValue("lastExperimentResult", JSON.stringify(expStatus));
+        } else {
+            setDebugValue("lastExperimentAt", new Date().toISOString());
+            setDebugValue("lastExperimentDesired", "skipped");
+            setDebugValue(
+                "lastExperimentResult",
+                JSON.stringify({
+                    skipped: true,
+                    reason: `Spotify < ${MIN_SPOTIFY_VERSION_FOR_EXPERIMENT_OVERRIDE}`,
+                    spotifyVersion: getSpotifyAppVersionString()
+                })
+            );
+        }
         stop();
     }
     setupMenuToggle();
