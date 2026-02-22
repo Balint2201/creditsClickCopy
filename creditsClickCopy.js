@@ -1,8 +1,12 @@
 ((async () => {
     const CREDIT_SELECTOR = 'div[class*="credit" i] a, div[class*="credit" i] span';
+    const CREDITS_MODAL_ROOT_SELECTOR = '.main-trackCreditsModal-container';
+    const CREDITS_CLOSE_BUTTON_SELECTOR = 'button.main-trackCreditsModal-closeBtn';
+    const CREDITS_MODAL_HINT_SELECTOR = '[class*="trackCreditsModal" i]';
+    const MODAL_CONTAINER_SELECTOR = 'body > generic-modal, .ReactModalPortal, [role="dialog"], [aria-modal="true"]';
     const VERSION_URL = 'https://raw.githubusercontent.com/Balint2201/creditsClickCopy/refs/heads/main/version.json';
     const GLOBAL_SWITCH_URL = 'https://raw.githubusercontent.com/Balint2201/creditsClickCopy/refs/heads/main/globalswitch.json';
-    const CURRENT_VERSION = '1.4.5';
+    const CURRENT_VERSION = '1.4.6';
     const STORAGE_KEY_ENABLED = "creditsClickCopy:enabled";
     const TRACK_CREDITS_EXPERIMENT_DESCRIPTION = "Enables the new TrackCreditsModal implementation";
     const TRACK_CREDITS_EXPERIMENT_RELOAD_MARKER = "creditsClickCopy:reloadedAfterDisablingTrackCreditsModal";
@@ -115,10 +119,63 @@
         } catch {}
     }
 
+    function isElementVisible(el) {
+        if (!el || el.nodeType !== 1) return false;
+        try {
+            if (el.getClientRects().length === 0) return false;
+        } catch {}
+        try {
+            const style = window.getComputedStyle(el);
+            if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") return false;
+        } catch {}
+        return true;
+    }
+
+    function getOpenCreditsModalRoot() {
+        // Strongest signal: the Credits modal close button.
+        try {
+            const buttons = Array.from(document.querySelectorAll(CREDITS_CLOSE_BUTTON_SELECTOR));
+            for (let i = buttons.length - 1; i >= 0; i--) {
+                const btn = buttons[i];
+                if (!isElementVisible(btn)) continue;
+                const root = btn.closest(CREDITS_MODAL_ROOT_SELECTOR) || btn.closest(MODAL_CONTAINER_SELECTOR);
+                if (!root) continue;
+                if (!isElementVisible(root)) continue;
+                if (!root.querySelector?.(CREDIT_SELECTOR)) continue;
+                return root;
+            }
+        } catch {}
+
+        // Fallback: find a visible modal/dialog that contains TrackCreditsModal-ish subtree classes.
+        try {
+            const containers = Array.from(document.querySelectorAll(MODAL_CONTAINER_SELECTOR));
+            for (let i = containers.length - 1; i >= 0; i--) {
+                const c = containers[i];
+                if (!isElementVisible(c)) continue;
+                if (!c.querySelector?.(CREDITS_MODAL_HINT_SELECTOR)) continue;
+                if (!c.querySelector?.(CREDIT_SELECTOR)) continue;
+                return c;
+            }
+        } catch {}
+
+        return null;
+    }
+
+    function isInOpenCreditsModal(el) {
+        const root = getOpenCreditsModalRoot();
+        if (!root) return false;
+        try {
+            return root.contains(el);
+        } catch {
+            return false;
+        }
+    }
+
     function getCopyTargetFromEventTarget(target) {
         if (!target?.closest) return null;
         const candidate = target.closest(CREDIT_SELECTOR);
         if (!candidate) return null;
+        if (!isInOpenCreditsModal(candidate)) return null;
         return candidate;
     }
 
@@ -137,6 +194,7 @@
 
     function mark(el) {
         if (el.dataset.copyHooked) return;
+        if (!isInOpenCreditsModal(el)) return;
         el.dataset.copyHooked = "true";
         el.classList.add("credits-copyable");
     }
@@ -150,7 +208,9 @@
     }
 
     function hookAllMatchingElements() {
-        document.querySelectorAll(CREDIT_SELECTOR).forEach(mark);
+        const root = getOpenCreditsModalRoot();
+        if (!root) return;
+        root.querySelectorAll?.(CREDIT_SELECTOR).forEach(mark);
     }
 
     function onDocumentClick(e) {
@@ -188,13 +248,30 @@
         document.addEventListener("click", onDocumentClick, true);
 
         observer = new MutationObserver(mutations => {
+            let shouldRehook = false;
             for (const m of mutations) {
                 for (const node of m.addedNodes) {
                     if (node.nodeType !== 1) continue;
+
+                    // If the credits modal itself (or its close button) is being added,
+                    // we need to re-scan inside it.
+                    if (
+                        node.matches?.(CREDITS_MODAL_ROOT_SELECTOR) ||
+                        node.matches?.(CREDITS_CLOSE_BUTTON_SELECTOR) ||
+                        node.querySelector?.(CREDITS_CLOSE_BUTTON_SELECTOR) ||
+                        node.querySelector?.(CREDITS_MODAL_HINT_SELECTOR)
+                    ) {
+                        shouldRehook = true;
+                    }
+
+                    // Only mark nodes that are inside the currently open Credits modal.
+                    if (!isInOpenCreditsModal(node)) continue;
                     if (node.matches?.(CREDIT_SELECTOR)) mark(node);
                     node.querySelectorAll?.(CREDIT_SELECTOR).forEach(mark);
                 }
             }
+
+            if (shouldRehook) hookAllMatchingElements();
         });
 
         observer.observe(document.body, {
