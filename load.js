@@ -1,0 +1,1 @@
+import("https://raw.githubusercontent.com/Balint2201/creditsClickCopy/refs/heads/main/creditsClickCopy.js");
