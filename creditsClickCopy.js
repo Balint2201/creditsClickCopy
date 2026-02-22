@@ -1,19 +1,17 @@
 ((async () => {
     const CREDIT_SELECTOR = 'div[class*="credit" i] a, div[class*="credit" i] span';
-    // Strict gating: only copy when the click is inside the *actual* Spotify Credits modal.
-    // Do not use localized strings; do not accept generic dialogs.
-    // Requirement: ensure the modal root class is exactly `main-trackCreditsModal-container`.
     const CREDITS_MODAL_ROOT_SELECTOR = '.main-trackCreditsModal-container';
     const CREDITS_CLOSE_BUTTON_SELECTOR = 'button.main-trackCreditsModal-closeBtn';
     const VERSION_URL = 'https://raw.githubusercontent.com/Balint2201/creditsClickCopy/refs/heads/main/version.json';
     const GLOBAL_SWITCH_URL = 'https://raw.githubusercontent.com/Balint2201/creditsClickCopy/refs/heads/main/globalswitch.json';
-    const CURRENT_VERSION = '1.4.7';
     const STORAGE_KEY_ENABLED = "creditsClickCopy:enabled";
     const TRACK_CREDITS_EXPERIMENT_DESCRIPTION = "Enables the new TrackCreditsModal implementation";
     const TRACK_CREDITS_EXPERIMENT_RELOAD_MARKER = "creditsClickCopy:reloadedAfterDisablingTrackCreditsModal";
     const TRACK_CREDITS_EXPERIMENT_ENABLE_RELOAD_MARKER = "creditsClickCopy:reloadedAfterEnablingTrackCreditsModal";
     const DEFAULT_POPUP_LENGTH_MS = 4500;
     const DEBUG_KEY_PREFIX = "creditsClickCopy:debug:";
+    // Version
+    const CURRENT_VERSION = '1.5.0';
 
     let enabled = true;
     let enabledGlobally = true;
@@ -42,6 +40,10 @@
         const style = document.createElement("style");
         style.id = "credits-click-copy-style";
         style.textContent = `
+            ${CREDITS_MODAL_ROOT_SELECTOR} div[class*="credit" i] a,
+            ${CREDITS_MODAL_ROOT_SELECTOR} div[class*="credit" i] span {
+                cursor: copy;
+            }
             .copied {
                 opacity: 0.6;
                 transition: opacity 150ms ease;
@@ -90,6 +92,9 @@
             .ccc-about-debug .v {
                 opacity: 0.9;
                 word-break: break-word;
+            }
+            .ccc-about-debug button {
+                cursor: pointer;
             }
         `;
         document.head.appendChild(style);
@@ -399,24 +404,25 @@
     }
 
     function findAboutContainerElement() {
-        const dialogs = Array.from(document.querySelectorAll('[role="dialog"]'));
-        for (const dialog of dialogs) {
-            const text = dialog.textContent || "";
-            if (looksLikeAboutSpotifyDialogText(text)) return dialog;
-        }
+        const ABOUT_MODAL_CLASS_SUBSTRING = "desktopmodals-aboutSpotifyModal";
 
-        const candidates = Array.from(document.querySelectorAll('main, section, div'));
         let best = null;
-        let bestLen = Infinity;
-        for (const el of candidates) {
-            const text = el.textContent || "";
-            if (!looksLikeAboutSpotifyDialogText(text)) continue;
-            const len = text.length;
-            if (len < bestLen) {
+        try {
+            const matches = Array.from(document.querySelectorAll(`[class*="${ABOUT_MODAL_CLASS_SUBSTRING}"]`));
+            for (let i = matches.length - 1; i >= 0; i--) {
+                let el = matches[i];
+                if (!isElementVisible(el)) continue;
+
+                while (el?.parentElement && String(el.parentElement.className || "").includes(ABOUT_MODAL_CLASS_SUBSTRING)) {
+                    el = el.parentElement;
+                }
+
+                if (!isElementVisible(el)) continue;
                 best = el;
-                bestLen = len;
+                break;
             }
-        }
+        } catch {}
+
         return best;
     }
 
@@ -519,6 +525,61 @@
             row.appendChild(valueEl);
             container.appendChild(row);
         }
+
+        const actionsRow = document.createElement("div");
+        actionsRow.className = "row";
+        const actionsKey = document.createElement("div");
+        actionsKey.className = "k";
+        actionsKey.textContent = "Actions:";
+        const actionsValue = document.createElement("div");
+        actionsValue.className = "v";
+
+        const reloadBtn = document.createElement("button");
+        reloadBtn.type = "button";
+        reloadBtn.id = "ccc-debug-reload";
+        reloadBtn.textContent = "Reload extension";
+
+        reloadBtn.addEventListener("click", async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            if (reloadBtn.disabled) return;
+            reloadBtn.disabled = true;
+            reloadBtn.textContent = "Reloading...";
+
+            setDebugValue("lastSelfReloadAt", new Date().toISOString());
+
+            const wasEnabled = enabled;
+            try {
+                stop();
+            } catch {}
+
+            if (wasEnabled) {
+                try {
+                    const expStatus = await setTrackCreditsModalExperimentDisabled().catch(() => null);
+                    setDebugValue("lastExperimentAt", new Date().toISOString());
+                    setDebugValue("lastExperimentDesired", "false");
+                    setDebugValue("lastExperimentResult", JSON.stringify(expStatus));
+                } catch {}
+
+                try {
+                    start();
+                } catch {}
+            }
+
+            try {
+                showToast("creditsClickCopy: reloaded");
+            } catch {}
+
+            setTimeout(() => {
+                try { renderAboutDebugBlock(); } catch {}
+            }, 250);
+        });
+
+        actionsValue.appendChild(reloadBtn);
+        actionsRow.appendChild(actionsKey);
+        actionsRow.appendChild(actionsValue);
+        container.appendChild(actionsRow);
     }
 
     async function setupAboutDebugInjection() {
