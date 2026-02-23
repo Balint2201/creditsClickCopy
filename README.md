@@ -2,11 +2,31 @@
 
 A small Spicetify extension that lets you copy Credits names with a single click.
 
-## Features
-- Click any artist / writer / producer name
-- Instantly copies to clipboard
-- No text selection needed
-- Works around Spotify selection restrictions
+## Client-side features
+- Click-to-copy inside the Credits modal (artist / writer / producer names)
+	- Only triggers for left-clicks on credit name elements inside the currently open Credits modal
+	- Prevents default click behavior to avoid navigation/selection issues
+- Clipboard support
+	- Uses `navigator.clipboard.writeText()` when available
+	- Falls back to a hidden textarea + `document.execCommand("copy")` if needed
+- Lightweight UI feedback
+	- Shows a copy cursor on eligible names
+	- Briefly flashes the clicked element (opacity change)
+	- Can show in-app toast notifications (update available / warnings / global switch + reason)
+- Enable/disable toggle (client-side state)
+	- Adds a Profile menu toggle: "creditsClickCopy"
+	- Persists enabled state via Spicetify LocalStorage (with `localStorage` fallback)
+- Compatibility handling for Spotify Credits modal
+	- Can attempt to disable the Spotify Remote Config experiment: "Enables the new TrackCreditsModal implementation" (Spotify versions `>= 1.2.83`)
+	- May trigger a one-time reload after changing that override
+	- If the experiment can’t be overridden effectively, shows a warning toast
+- Debug info injection (local)
+	- Adds a collapsible "creditsClickCopy (DEBUG)" block in the About Spotify dialog showing local status (version, toggle state, last checks, etc.)
+
+## Client-side network calls
+The extension may fetch two small JSON files from GitHub (no user data is uploaded):
+- `version.json` (to notify if an update is available)
+- `globalswitch.json` (optional global kill-switch + toast duration)
 
 ## Usage
 Open a track → View Credits → click a name to copy it.
@@ -14,7 +34,7 @@ Open a track → View Credits → click a name to copy it.
 ## Toggle (disable/enable)
 You can disable the extension without uninstalling it:
 
-- Profile menu → Credits Click Copy (checkmark toggle)
+- Profile menu → creditsClickCopy (checkmark toggle)
 
 The state is saved and will persist across restarts.
 
