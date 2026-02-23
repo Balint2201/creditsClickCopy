@@ -11,7 +11,7 @@
     const DEFAULT_POPUP_LENGTH_MS = 4500;
     const DEBUG_KEY_PREFIX = "creditsClickCopy:debug:";
     // Version
-    const CURRENT_VERSION = '1.5.1';
+    const CURRENT_VERSION = '1.5.2';
 
     let enabled = true;
     let enabledGlobally = true;
@@ -570,61 +570,6 @@
             row.appendChild(valueEl);
             container.appendChild(row);
         }
-
-        const actionsRow = document.createElement("div");
-        actionsRow.className = "row";
-        const actionsKey = document.createElement("div");
-        actionsKey.className = "k";
-        actionsKey.textContent = "Actions:";
-        const actionsValue = document.createElement("div");
-        actionsValue.className = "v";
-
-        const reloadBtn = document.createElement("button");
-        reloadBtn.type = "button";
-        reloadBtn.id = "ccc-debug-reload";
-        reloadBtn.textContent = "Reload extension";
-
-        reloadBtn.addEventListener("click", async (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-
-            if (reloadBtn.disabled) return;
-            reloadBtn.disabled = true;
-            reloadBtn.textContent = "Reloading...";
-
-            setDebugValue("lastSelfReloadAt", new Date().toISOString());
-
-            const wasEnabled = enabled;
-            try {
-                stop();
-            } catch {}
-
-            if (wasEnabled) {
-                try {
-                    const expStatus = await setTrackCreditsModalExperimentDisabled().catch(() => null);
-                    setDebugValue("lastExperimentAt", new Date().toISOString());
-                    setDebugValue("lastExperimentDesired", "false");
-                    setDebugValue("lastExperimentResult", JSON.stringify(expStatus));
-                } catch {}
-
-                try {
-                    start();
-                } catch {}
-            }
-
-            try {
-                showToast("creditsClickCopy: reloaded");
-            } catch {}
-
-            setTimeout(() => {
-                try { renderAboutDebugBlock(); } catch {}
-            }, 250);
-        });
-
-        actionsValue.appendChild(reloadBtn);
-        actionsRow.appendChild(actionsKey);
-        actionsRow.appendChild(actionsValue);
-        container.appendChild(actionsRow);
     }
 
     async function setupAboutDebugInjection() {
