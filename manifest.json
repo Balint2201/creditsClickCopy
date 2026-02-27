@@ -2,7 +2,7 @@
   "name": "creditsClickCopy",
   "description": "Click any name in the Credits view to instantly copy it to clipboard.",
   "preview": "preview.png",
-  "main": "creditsClickCopy.js",
+  "main": "creditsClickCopy-load.js",
   "readme": "README.md",
   "authors": [
     { "name": "Balint2201", "url": "https://github.com/Balint2201" }
