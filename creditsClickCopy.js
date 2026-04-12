@@ -14,7 +14,7 @@
     const DEFAULT_POPUP_LENGTH_MS = 4500;
     const DEBUG_KEY_PREFIX = "creditsClickCopy:debug:";
     // Version
-    const CURRENT_VERSION = '1.5.3';
+    const CURRENT_VERSION = '1.5.4';
 
     let enabled = true;
     let enabledGlobally = true;
@@ -493,9 +493,9 @@
         return best;
     }
 
-    function findSpicetifyRowElement(aboutRoot) {
+    function findSpicetifySummaryElement(aboutRoot) {
         if (!aboutRoot?.querySelectorAll) return null;
-        const nodes = aboutRoot.querySelectorAll("div, section, p, span, li, a, button");
+        const nodes = aboutRoot.querySelectorAll("summary");
         let best = null;
         let bestLen = Infinity;
         for (const el of nodes) {
@@ -512,13 +512,9 @@
         return best;
     }
 
-    function getInsertionAnchorForSpicetifyRow(spicetifyRow) {
-        if (!spicetifyRow) return null;
-        return (
-            spicetifyRow.closest('button, [role="button"], li, [role="row"], [data-testid], section') ||
-            spicetifyRow.closest('div') ||
-            spicetifyRow
-        );
+    function getInsertionAnchorForSpicetifySummary(spicetifySummary) {
+        if (!spicetifySummary) return null;
+        return spicetifySummary;
     }
 
     function renderAboutDebugBlock() {
@@ -537,13 +533,13 @@
             summary.textContent = "creditsClickCopy (DEBUG)";
             block.appendChild(summary);
 
-            const spicetifyRow = findSpicetifyRowElement(aboutContainer);
-            const insertionAnchor = getInsertionAnchorForSpicetifyRow(spicetifyRow);
+            const spicetifySummary = findSpicetifySummaryElement(aboutContainer);
+            const insertionAnchor = getInsertionAnchorForSpicetifySummary(spicetifySummary);
             if (insertionAnchor?.insertAdjacentElement) insertionAnchor.insertAdjacentElement("afterend", block);
             else aboutContainer.appendChild(block);
         } else {
-            const spicetifyRow = findSpicetifyRowElement(aboutContainer);
-            const insertionAnchor = getInsertionAnchorForSpicetifyRow(spicetifyRow);
+            const spicetifySummary = findSpicetifySummaryElement(aboutContainer);
+            const insertionAnchor = getInsertionAnchorForSpicetifySummary(spicetifySummary);
             const desiredParent = insertionAnchor?.parentElement;
             if (desiredParent && block.parentElement !== desiredParent) {
                 try { insertionAnchor.insertAdjacentElement("afterend", block); } catch {}
