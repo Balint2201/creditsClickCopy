@@ -14,7 +14,7 @@
     const DEFAULT_POPUP_LENGTH_MS = 4500;
     const DEBUG_KEY_PREFIX = "creditsClickCopy:debug:";
     // Version
-    const CURRENT_VERSION = '1.5.6';
+    const CURRENT_VERSION = '1.5.7';
 
     let enabled = true;
     let enabledGlobally = true;
@@ -471,33 +471,40 @@
     }
 
     function findAboutContainerElement() {
-        const rootSelectorCandidates = [
-            "body > generic-modal",
-            "generic-modal",
-        ];
-
         try {
-            for (const selector of rootSelectorCandidates) {
-                const modals = Array.from(document.querySelectorAll(selector));
-                for (let i = modals.length - 1; i >= 0; i--) {
-                    const modal = modals[i];
-                    if (!isElementVisible(modal)) continue;
+            const candidates = [];
+            const pushUnique = el => {
+                if (!el) return;
+                if (candidates.includes(el)) return;
+                candidates.push(el);
+            };
 
-                    const main = modal.querySelector?.("main");
-                    const container = isElementVisible(main) ? main : modal;
-                    const text = container?.textContent || "";
-                    const dialogTitle = (
-                        modal.querySelector?.('.GenericModal[role="dialog"]')?.getAttribute?.("aria-label") ||
-                        modal.querySelector?.(".main-trackCreditsModal-header h1")?.textContent ||
-                        ""
-                    ).trim();
-                    if (
-                        /about\s+spotify/i.test(dialogTitle) ||
-                        looksLikeAboutSpotifyDialogText(text) ||
-                        /spicetify\s*v?\d+\.\d+\.\d+/i.test(text)
-                    ) {
-                        return container;
-                    }
+            for (const modal of Array.from(document.querySelectorAll("generic-modal"))) {
+                pushUnique(modal.querySelector?.('[role="dialog"][aria-modal="true"]') || modal);
+            }
+            for (const dialog of Array.from(document.querySelectorAll('[role="dialog"][aria-modal="true"], [role="dialog"]'))) {
+                pushUnique(dialog);
+            }
+
+            for (let i = candidates.length - 1; i >= 0; i--) {
+                const candidate = candidates[i];
+                if (!isElementVisible(candidate)) continue;
+
+                const main = candidate.querySelector?.("main");
+                const container = isElementVisible(main) ? main : candidate;
+                const text = container?.textContent || "";
+                const dialogTitle = (
+                    candidate.getAttribute?.("aria-label") ||
+                    candidate.querySelector?.('h1, h2, h3')?.textContent ||
+                    ""
+                ).trim();
+
+                if (
+                    /about\s+spotify|spotify\s+névjegye/i.test(dialogTitle) ||
+                    looksLikeAboutSpotifyDialogText(text) ||
+                    /spicetify\s*v?\d+\.\d+\.\d+/i.test(text)
+                ) {
+                    return container;
                 }
             }
         } catch {}
@@ -517,6 +524,15 @@
                 return el;
             }
         } catch {}
+
+        const globalAnchor = findVisibleSpicetifyInfoElement(document);
+        if (globalAnchor) {
+            return (
+                globalAnchor.closest('main, [role="dialog"], generic-modal') ||
+                globalAnchor.parentElement ||
+                null
+            );
+        }
 
         return null;
     }
@@ -540,9 +556,45 @@
         return best;
     }
 
-    function getInsertionAnchorForSpicetifySummary(spicetifySummary) {
-        if (!spicetifySummary) return null;
-        return spicetifySummary.closest("details") || spicetifySummary;
+    function findVisibleSpicetifyInfoElement(root = document) {
+        if (!root?.querySelectorAll) return null;
+        const nodes = root.querySelectorAll("summary, details, li, p, div, span, h1, h2, h3");
+        let best = null;
+        let bestLen = Infinity;
+        for (const el of nodes) {
+            if (!isElementVisible(el)) continue;
+            const text = String(el.textContent || "").trim();
+            if (!/spicetify\s*v?\d+\.\d+\.\d+/i.test(text)) continue;
+            const len = text.length;
+            if (len < bestLen) {
+                best = el;
+                bestLen = len;
+            }
+        }
+        return best;
+    }
+
+    function findSpicetifyAnchorElement(aboutRoot) {
+        const spicetifySummary = findSpicetifySummaryElement(aboutRoot);
+        if (spicetifySummary) return spicetifySummary.closest("details") || spicetifySummary;
+
+        const visibleInfo = findVisibleSpicetifyInfoElement(aboutRoot);
+        if (visibleInfo) return visibleInfo.closest("details") || visibleInfo;
+
+        if (!aboutRoot?.querySelectorAll) return null;
+        const nodes = aboutRoot.querySelectorAll("details, li, p, div, span, h1, h2, h3");
+        let best = null;
+        let bestLen = Infinity;
+        for (const el of nodes) {
+            const text = String(el.textContent || "").trim();
+            if (!/spicetify\s*v?\d+\.\d+\.\d+/i.test(text)) continue;
+            const len = text.length;
+            if (len < bestLen) {
+                best = el;
+                bestLen = len;
+            }
+        }
+        return best;
     }
 
     function renderAboutDebugBlock() {
@@ -561,13 +613,11 @@
             summary.textContent = "creditsClickCopy (DEBUG)";
             block.appendChild(summary);
 
-            const spicetifySummary = findSpicetifySummaryElement(aboutContainer);
-            const insertionAnchor = getInsertionAnchorForSpicetifySummary(spicetifySummary);
+            const insertionAnchor = findSpicetifyAnchorElement(aboutContainer);
             if (insertionAnchor?.insertAdjacentElement) insertionAnchor.insertAdjacentElement("afterend", block);
             else aboutContainer.appendChild(block);
         } else {
-            const spicetifySummary = findSpicetifySummaryElement(aboutContainer);
-            const insertionAnchor = getInsertionAnchorForSpicetifySummary(spicetifySummary);
+            const insertionAnchor = findSpicetifyAnchorElement(aboutContainer);
             const desiredParent = insertionAnchor?.parentElement || aboutContainer;
             const shouldMoveToDesiredParent = desiredParent && block.parentElement !== desiredParent;
             const shouldPlaceAfterAnchor = insertionAnchor && block.previousElementSibling !== insertionAnchor;
