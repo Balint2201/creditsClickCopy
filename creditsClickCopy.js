@@ -14,7 +14,7 @@
     const DEFAULT_POPUP_LENGTH_MS = 4500;
     const DEBUG_KEY_PREFIX = "creditsClickCopy:debug:";
     // Version
-    const CURRENT_VERSION = '1.5.5';
+    const CURRENT_VERSION = '1.5.6';
 
     let enabled = true;
     let enabledGlobally = true;
@@ -478,12 +478,27 @@
 
         try {
             for (const selector of rootSelectorCandidates) {
-                const modal = document.querySelector(selector);
-                if (!isElementVisible(modal)) continue;
+                const modals = Array.from(document.querySelectorAll(selector));
+                for (let i = modals.length - 1; i >= 0; i--) {
+                    const modal = modals[i];
+                    if (!isElementVisible(modal)) continue;
 
-                const main = modal.querySelector?.("main");
-                if (isElementVisible(main)) return main;
-                return modal;
+                    const main = modal.querySelector?.("main");
+                    const container = isElementVisible(main) ? main : modal;
+                    const text = container?.textContent || "";
+                    const dialogTitle = (
+                        modal.querySelector?.('.GenericModal[role="dialog"]')?.getAttribute?.("aria-label") ||
+                        modal.querySelector?.(".main-trackCreditsModal-header h1")?.textContent ||
+                        ""
+                    ).trim();
+                    if (
+                        /about\s+spotify/i.test(dialogTitle) ||
+                        looksLikeAboutSpotifyDialogText(text) ||
+                        /spicetify\s*v?\d+\.\d+\.\d+/i.test(text)
+                    ) {
+                        return container;
+                    }
+                }
             }
         } catch {}
 
@@ -527,7 +542,7 @@
 
     function getInsertionAnchorForSpicetifySummary(spicetifySummary) {
         if (!spicetifySummary) return null;
-        return spicetifySummary;
+        return spicetifySummary.closest("details") || spicetifySummary;
     }
 
     function renderAboutDebugBlock() {
@@ -553,9 +568,13 @@
         } else {
             const spicetifySummary = findSpicetifySummaryElement(aboutContainer);
             const insertionAnchor = getInsertionAnchorForSpicetifySummary(spicetifySummary);
-            const desiredParent = insertionAnchor?.parentElement;
-            if (desiredParent && block.parentElement !== desiredParent) {
+            const desiredParent = insertionAnchor?.parentElement || aboutContainer;
+            const shouldMoveToDesiredParent = desiredParent && block.parentElement !== desiredParent;
+            const shouldPlaceAfterAnchor = insertionAnchor && block.previousElementSibling !== insertionAnchor;
+            if ((shouldMoveToDesiredParent || shouldPlaceAfterAnchor) && insertionAnchor?.insertAdjacentElement) {
                 try { insertionAnchor.insertAdjacentElement("afterend", block); } catch {}
+            } else if (!insertionAnchor && desiredParent && block.parentElement !== desiredParent) {
+                try { desiredParent.appendChild(block); } catch {}
             }
         }
 
