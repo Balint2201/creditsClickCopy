@@ -16,8 +16,8 @@ A small Spicetify extension that lets you copy Credits names with a single click
 - Enable/disable toggle (client-side state)
 	- Adds a Profile menu toggle: "creditsClickCopy"
 	- Persists enabled state via Spicetify LocalStorage (with `localStorage` fallback)
-- Compatibility handling for Spotify Credits modal
-	- Can attempt to disable the Spotify Remote Config experiment: "Enables the new TrackCreditsModal implementation" (Spotify versions `>= 1.2.83`)
+	- Compatibility handling for Spotify Credits modal
+	- Can attempt to disable the Spotify Remote Config experiments separately: "Enables grouped credits display in TrackCreditsModal (credits grouped by role category)" and "Enables the new TrackCreditsModal implementation" (Spotify versions `>= 1.2.83`)
 	- May trigger a one-time reload after changing that override
 	- If the experiment can’t be overridden effectively, shows a warning toast
 - Debug info injection (local)
@@ -38,13 +38,15 @@ You can disable the extension without uninstalling it:
 
 The state is saved and will persist across restarts.
 
-When disabled locally, the extension also attempts to re-enable Spotify's experiment:
+When disabled locally, the extension also attempts to re-enable Spotify's TrackCreditsModal experiments separately:
 
-- "Enables the new TrackCreditsModal implementation"
+- "Enables grouped credits display in TrackCreditsModal (credits grouped by role category)"
+- fallback: "Enables the new TrackCreditsModal implementation"
 
 ## TrackCreditsModal experiment handling
-To keep the Credits click-to-copy working, the extension attempts to override (set to `false`) the experiment:
+To keep the Credits click-to-copy working, the extension attempts to override (set to `false`) the matching TrackCreditsModal experiments separately:
 
+- "Enables grouped credits display in TrackCreditsModal (credits grouped by role category)"
 - "Enables the new TrackCreditsModal implementation"
 
 Note: This experiment override is only attempted on Spotify app versions `>= 1.2.83`. On `1.2.82` and below, the extension will not attempt to disable the experiment and will not show the related warning toast.

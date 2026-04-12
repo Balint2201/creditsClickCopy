@@ -5,13 +5,16 @@
     const VERSION_URL = 'https://raw.githubusercontent.com/Balint2201/creditsClickCopy/refs/heads/main/version.json';
     const GLOBAL_SWITCH_URL = 'https://raw.githubusercontent.com/Balint2201/creditsClickCopy/refs/heads/main/globalswitch.json';
     const STORAGE_KEY_ENABLED = "creditsClickCopy:enabled";
-    const TRACK_CREDITS_EXPERIMENT_DESCRIPTION = "Enables the new TrackCreditsModal implementation";
+    const TRACK_CREDITS_EXPERIMENT_DESCRIPTIONS = [
+        "Enables grouped credits display in TrackCreditsModal (credits grouped by role category)",
+        "Enables the new TrackCreditsModal implementation",
+    ];
     const TRACK_CREDITS_EXPERIMENT_RELOAD_MARKER = "creditsClickCopy:reloadedAfterDisablingTrackCreditsModal";
     const TRACK_CREDITS_EXPERIMENT_ENABLE_RELOAD_MARKER = "creditsClickCopy:reloadedAfterEnablingTrackCreditsModal";
     const DEFAULT_POPUP_LENGTH_MS = 4500;
     const DEBUG_KEY_PREFIX = "creditsClickCopy:debug:";
     // Version
-    const CURRENT_VERSION = '1.5.2';
+    const CURRENT_VERSION = '1.5.3';
 
     let enabled = true;
     let enabledGlobally = true;
@@ -31,6 +34,25 @@
         } catch {
             return null;
         }
+    }
+
+    function getTrackCreditsExperimentLabel() {
+        return TRACK_CREDITS_EXPERIMENT_DESCRIPTIONS[0];
+    }
+
+    function getTrackCreditsExperimentTarget(props, description) {
+        const exactMatch = (props || []).find(p => String(p?.description || "").trim() === description);
+        if (exactMatch) return exactMatch;
+
+        return (props || []).find(p => /TrackCreditsModal/i.test(String(p?.description || "")));
+    }
+
+    function shouldReloadAfterTrackCreditsExperimentChange(previousEffective, desiredValue) {
+        return previousEffective === !desiredValue;
+    }
+
+    function shouldReloadAfterAnyTrackCreditsExperimentChange(statusList) {
+        return Array.isArray(statusList) && statusList.some(status => status?.requiresReload);
     }
 
     function ensureStyle() {
@@ -304,7 +326,7 @@
                     if (shouldAttemptTrackCreditsExperimentOverride()) {
                         const status = await setTrackCreditsModalExperimentDisabled().catch(() => null);
                         if (status?.failed && status?.effective !== false) {
-                            showToast(`creditsClickCopy: Couldn't disable the experiment "${TRACK_CREDITS_EXPERIMENT_DESCRIPTION}". The extension may not work.`);
+                            showToast(`creditsClickCopy: Couldn't disable the experiment "${getTrackCreditsExperimentLabel()}". The extension may not work.`);
                         }
                     }
                     start();
@@ -611,7 +633,7 @@
         setInterval(attempt, 2500);
     }
 
-    async function setTrackCreditsModalExperimentOverride(desiredValue, reloadMarkerKey) {
+    async function setTrackCreditsModalExperimentOverrideForDescription(description, desiredValue) {
         const hasApi = await waitFor(
             () => !!window.Spicetify?.Platform?.RemoteConfigDebugAPI?.getProperties,
             { intervalMs: 250, timeoutMs: 6000 }
@@ -629,15 +651,12 @@
             return { effective: undefined, overridden: false, failed: true };
         }
 
-        const target = props?.find?.(p =>
-            (p?.description?.trim?.() === TRACK_CREDITS_EXPERIMENT_DESCRIPTION) ||
-            (/TrackCreditsModal/i.test(p?.description || ""))
-        );
+        const target = getTrackCreditsExperimentTarget(props, description);
         if (!target?.name) return { effective: undefined, overridden: false, failed: true };
 
         const currentEffective = getRemoteConfigEffectiveBoolean(target);
         if (currentEffective === desiredValue) {
-            return { effective: currentEffective, overridden: false, failed: false };
+            return { effective: desiredValue, overridden: false, failed: false };
         }
 
         try {
@@ -649,26 +668,24 @@
             return { effective: currentEffective, overridden: false, failed: true };
         }
 
-        if (currentEffective === !desiredValue) {
-            try {
-                if (!sessionStorage.getItem(reloadMarkerKey)) {
-                    sessionStorage.setItem(reloadMarkerKey, "1");
-                    location.reload();
-                }
-            } catch {}
-        }
-
-        return { effective: currentEffective, overridden: true, failed: false };
+        return {
+            effective: currentEffective,
+            overridden: true,
+            failed: false,
+            requiresReload: shouldReloadAfterTrackCreditsExperimentChange(currentEffective, desiredValue),
+        };
     }
 
     function setTrackCreditsModalExperimentDisabled() {
-        try { sessionStorage.removeItem(TRACK_CREDITS_EXPERIMENT_ENABLE_RELOAD_MARKER); } catch {}
-        return setTrackCreditsModalExperimentOverride(false, TRACK_CREDITS_EXPERIMENT_RELOAD_MARKER);
+        return Promise.all(
+            TRACK_CREDITS_EXPERIMENT_DESCRIPTIONS.map(description => setTrackCreditsModalExperimentOverrideForDescription(description, false))
+        );
     }
 
     function setTrackCreditsModalExperimentEnabled() {
-        try { sessionStorage.removeItem(TRACK_CREDITS_EXPERIMENT_RELOAD_MARKER); } catch {}
-        return setTrackCreditsModalExperimentOverride(true, TRACK_CREDITS_EXPERIMENT_ENABLE_RELOAD_MARKER);
+        return Promise.all(
+            TRACK_CREDITS_EXPERIMENT_DESCRIPTIONS.map(description => setTrackCreditsModalExperimentOverrideForDescription(description, true))
+        );
     }
 
     const globalSwitch = await getGlobalSwitch();
@@ -695,12 +712,25 @@
 
     if (enabled) {
         if (shouldAttemptTrackCreditsExperimentOverride()) {
-            const expStatus = await setTrackCreditsModalExperimentDisabled();
+            const expStatusList = await setTrackCreditsModalExperimentDisabled();
+            const expStatus = {
+                failed: expStatusList.some(status => status?.failed),
+                effective: expStatusList.every(status => status?.effective === false) ? false : expStatusList.find(status => status?.effective !== undefined)?.effective,
+                overridden: expStatusList.some(status => status?.overridden),
+            };
             setDebugValue("lastExperimentAt", new Date().toISOString());
             setDebugValue("lastExperimentDesired", "false");
-            setDebugValue("lastExperimentResult", JSON.stringify(expStatus));
+            setDebugValue("lastExperimentResult", JSON.stringify(expStatusList));
             if (expStatus?.failed && expStatus?.effective !== false) {
-                showToast(`creditsClickCopy: Couldn't disable the experiment "${TRACK_CREDITS_EXPERIMENT_DESCRIPTION}". The extension may not work.`);
+                showToast(`creditsClickCopy: Couldn't disable the experiment "${getTrackCreditsExperimentLabel()}". The extension may not work.`);
+            }
+            if (shouldReloadAfterAnyTrackCreditsExperimentChange(expStatusList)) {
+                try {
+                    if (!sessionStorage.getItem(TRACK_CREDITS_EXPERIMENT_RELOAD_MARKER)) {
+                        sessionStorage.setItem(TRACK_CREDITS_EXPERIMENT_RELOAD_MARKER, "1");
+                        location.reload();
+                    }
+                } catch {}
             }
         } else {
             setDebugValue("lastExperimentAt", new Date().toISOString());
@@ -717,10 +747,18 @@
         start();
     } else {
         if (shouldAttemptTrackCreditsExperimentOverride()) {
-            const expStatus = await setTrackCreditsModalExperimentEnabled().catch(() => null);
+            const expStatusList = await setTrackCreditsModalExperimentEnabled().catch(() => null);
             setDebugValue("lastExperimentAt", new Date().toISOString());
             setDebugValue("lastExperimentDesired", "true");
-            setDebugValue("lastExperimentResult", JSON.stringify(expStatus));
+            setDebugValue("lastExperimentResult", JSON.stringify(expStatusList));
+            if (shouldReloadAfterAnyTrackCreditsExperimentChange(expStatusList)) {
+                try {
+                    if (!sessionStorage.getItem(TRACK_CREDITS_EXPERIMENT_ENABLE_RELOAD_MARKER)) {
+                        sessionStorage.setItem(TRACK_CREDITS_EXPERIMENT_ENABLE_RELOAD_MARKER, "1");
+                        location.reload();
+                    }
+                } catch {}
+            }
         } else {
             setDebugValue("lastExperimentAt", new Date().toISOString());
             setDebugValue("lastExperimentDesired", "skipped");
