@@ -14,7 +14,7 @@
     const DEFAULT_POPUP_LENGTH_MS = 4500;
     const DEBUG_KEY_PREFIX = "creditsClickCopy:debug:";
     // Version
-    const CURRENT_VERSION = '1.5.4';
+    const CURRENT_VERSION = '1.5.5';
 
     let enabled = true;
     let enabledGlobally = true;
@@ -471,10 +471,24 @@
     }
 
     function findAboutContainerElement() {
-        const ABOUT_MODAL_CLASS_SUBSTRING = "desktopmodals-aboutSpotifyModal";
+        const rootSelectorCandidates = [
+            "body > generic-modal",
+            "generic-modal",
+        ];
 
-        let best = null;
         try {
+            for (const selector of rootSelectorCandidates) {
+                const modal = document.querySelector(selector);
+                if (!isElementVisible(modal)) continue;
+
+                const main = modal.querySelector?.("main");
+                if (isElementVisible(main)) return main;
+                return modal;
+            }
+        } catch {}
+
+        try {
+            const ABOUT_MODAL_CLASS_SUBSTRING = "desktopmodals-aboutSpotifyModal";
             const matches = Array.from(document.querySelectorAll(`[class*="${ABOUT_MODAL_CLASS_SUBSTRING}"]`));
             for (let i = matches.length - 1; i >= 0; i--) {
                 let el = matches[i];
@@ -485,12 +499,11 @@
                 }
 
                 if (!isElementVisible(el)) continue;
-                best = el;
-                break;
+                return el;
             }
         } catch {}
 
-        return best;
+        return null;
     }
 
     function findSpicetifySummaryElement(aboutRoot) {
