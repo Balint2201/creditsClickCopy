@@ -1,0 +1,20 @@
+{
+  "name": "creditsclickcopy",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Spicetify extension that copies Credits names on click, plus the ccc live-inject dev CLI.",
+  "bin": {
+    "ccc": "bin/ccc.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "inject": "node bin/ccc.js inject",
+    "watch": "node bin/ccc.js watch",
+    "status": "node bin/ccc.js status",
+    "logs": "node bin/ccc.js logs"
+  },
+  "author": "Balint2201",
+  "license": "MIT"
+}
